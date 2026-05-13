@@ -157,6 +157,37 @@ def ollama_install_hint(os_name: str) -> str:
         return "curl -fsSL https://ollama.com/install.sh | sh"
 
 
+def _install_ollama(os_name: str) -> None:
+    console.print("  [dim]Installing Ollama...[/dim]")
+    if os_name == "Linux":
+        result = subprocess.run(
+            "curl -fsSL https://ollama.com/install.sh | sh",
+            shell=True,
+        )
+        if result.returncode == 0:
+            console.print("  [green]✓ Ollama installed.[/green]")
+        else:
+            console.print("  [red]✗ Install failed.[/red] Try manually:")
+            console.print("    [cyan]curl -fsSL https://ollama.com/install.sh | sh[/cyan]")
+    elif os_name == "Darwin":
+        if shutil.which("brew"):
+            result = subprocess.run(["brew", "install", "ollama"])
+            if result.returncode == 0:
+                console.print("  [green]✓ Ollama installed via Homebrew.[/green]")
+            else:
+                console.print("  [red]✗ brew install failed.[/red]")
+        else:
+            console.print(
+                "  [yellow]Homebrew not found.[/yellow] "
+                "Download from: [cyan]https://ollama.com/download[/cyan]"
+            )
+    else:
+        console.print(
+            "  [yellow]Auto-install not supported on Windows.[/yellow]\n"
+            "  Download from: [cyan]https://ollama.com/download[/cyan]"
+        )
+
+
 # ── Model recommendation ───────────────────────────────────────────────────────
 
 def recommend_models(hw: dict) -> list[tuple]:
@@ -225,24 +256,39 @@ def run() -> None:
         console.print("[dim]  Running CPU-only. Cloud models via Ollama are recommended.[/dim]")
     console.print()
 
-    # ── Ollama check ───────────────────────────────────────────────────────────
+    # ── Ollama install + start ─────────────────────────────────────────────────
     console.print("[bold]Checking Ollama...[/bold]")
     installed, running, ollama_bin = check_ollama()
 
     if not installed:
-        console.print(f"[red]  ✗ Ollama not found.[/red]")
-        console.print(f"  Install it: [cyan]{ollama_install_hint(hw['os'])}[/cyan]")
-        console.print(
-            "  Then open a [bold]new terminal[/bold] and re-run [bold]sarathi setup[/bold]."
-        )
-        console.print()
-    elif not running:
-        console.print(f"[yellow]  ⚠ Ollama found at {ollama_bin} but not running.[/yellow]")
-        console.print(f"  Start it:  [cyan]{ollama_bin} serve[/cyan]  (in a separate terminal)")
-        console.print()
-    else:
-        console.print(f"  [green]✓ Ollama running[/green] [dim]({ollama_bin})[/dim]")
-        console.print()
+        console.print("  [yellow]Ollama not found.[/yellow]")
+        if Confirm.ask("  Install Ollama now?", default=True):
+            _install_ollama(hw["os"])
+            # Re-check after install
+            installed, running, ollama_bin = check_ollama()
+            if not installed:
+                console.print(
+                    "\n  [red]Could not find ollama after install.[/red]\n"
+                    "  Open a new terminal and re-run [bold]sarathi setup[/bold].\n"
+                )
+        else:
+            console.print(
+                f"  Skipping. Install manually: [cyan]{ollama_install_hint(hw['os'])}[/cyan]\n"
+            )
+
+    if installed and not running:
+        console.print(f"  [yellow]Ollama installed but not running.[/yellow]")
+        if Confirm.ask("  Start ollama serve now (background)?", default=True):
+            subprocess.Popen(
+                [ollama_bin, "serve"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            import time; time.sleep(2)
+            _, running, _ = check_ollama()
+
+    if installed and running:
+        console.print(f"  [green]✓ Ollama running.[/green]")
+    console.print()
 
     # ── Model selection ────────────────────────────────────────────────────────
     recommended, others = recommend_models(hw)

@@ -28,8 +28,22 @@ class ResultFile:
     content: str  # text or base64 data URI for images
 
 
+# High-priority context files — scanned first so the LLM sees them early in context
+_PRIORITY_FILES = {"CLAUDE.md", "README.md", "readme.md", "claude.md"}
+
+
 def scan(project_dir: Path) -> list[ResultFile]:
     results: list[ResultFile] = []
+
+    # Priority files first (CLAUDE.md, README.md) — front-loaded into LLM context
+    for name in _PRIORITY_FILES:
+        f = project_dir / name
+        if f.exists() and f.is_file():
+            rel = str(f.relative_to(project_dir))
+            rf = _load_text(f, rel, "text")
+            if rf:
+                results.append(rf)
+
     for file in sorted(project_dir.rglob("*")):
         if not file.is_file():
             continue
@@ -37,8 +51,8 @@ def scan(project_dir: Path) -> list[ResultFile]:
             continue
         if file.name.startswith("."):
             continue
-        if file.name == "project.json":
-            continue
+        if file.name in {"project.json"} | _PRIORITY_FILES:
+            continue  # already added or intentionally skipped
 
         ext = file.suffix.lower()
         rel = str(file.relative_to(project_dir))

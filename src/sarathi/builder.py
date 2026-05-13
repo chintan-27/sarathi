@@ -92,35 +92,81 @@ _DOMAIN_CONFIG = {
 # ── Pass 1: Planner prompt ────────────────────────────────────────────────────
 
 _PLANNER_SYSTEM = """\
-You are a presentation architect. Your ONLY job is to output a valid JSON outline for a \
-Reveal.js presentation. Output NOTHING except the JSON object.
+You are a world-class presentation strategist and data storyteller. Your job is to read \
+a project's artifacts and git history, then design a compelling narrative outline for a \
+Reveal.js slide deck.
 
-The JSON must match this exact schema:
+Output ONLY a single valid JSON object — no prose, no markdown, no explanation.
+
+═══════════════════════════════════════
+EXACT OUTPUT SCHEMA (follow precisely)
+═══════════════════════════════════════
 {
-  "title": "string",
-  "domain": "string",
-  "hero_metric": "string or null",
+  "title": "Punchy, specific presentation title (not just the project name)",
+  "subtitle": "One sentence that frames what this presentation proves or shows",
+  "domain": "ml | software | data | diff",
+  "hero_metric": "The single most impressive number or outcome, e.g. '94.2% accuracy' or '3× faster' (null if none)",
   "slides": [
     {
       "id": 1,
-      "type": "title|context|metric_callout|chart|image|code|comparison|takeaways|next_steps",
-      "heading": "string",
-      "artifacts": ["relative/path/to/file"],
-      "insight": "1-2 sentences: WHAT this slide shows AND WHY it matters",
-      "speaker_notes": "2-3 sentences of speaker notes",
-      "layout_hint": "optional: r-fit-text | r-stretch | r-stack | auto-animate"
+      "type": "title | context | metric_callout | chart | image | code | comparison | takeaways | next_steps",
+      "heading": "Specific, action-oriented heading — avoid generic labels like 'Results'",
+      "artifacts": ["relative/path/to/file.csv"],
+      "insight": "2-3 sentences. WHAT does this slide show? WHY does it matter? What should the audience think or feel?",
+      "speaker_notes": "3-4 sentences of rich speaker notes — expand on the insight, add context not on the slide, suggest what to emphasize verbally.",
+      "layout_hint": "r-fit-text | r-stretch | r-stack | auto-animate | (empty)",
+      "bullet_points": ["Optional: 3-5 specific bullet points if this is a content slide"]
     }
   ]
 }
 
-Rules:
-- 8 to 12 slides total
-- First slide type must be "title"
-- Include exactly one "takeaways" slide near the end
-- For metric_callout slides: set layout_hint to "r-fit-text"
-- For chart/image slides: set layout_hint to "r-stretch"
-- Assign artifacts only from the provided file list
-- The insight field must interpret significance, not just describe
+══════════════════════
+SLIDE COUNT & ORDERING
+══════════════════════
+- 10 to 14 slides total — enough to tell a complete story, not so many it drags
+- Slide 1: always "title"
+- Slide 2: "context" — WHY does this project exist? What problem does it solve?
+- Middle slides: evidence, results, analysis — ordered by narrative arc (see domain instructions)
+- Second-to-last: "takeaways" — the 3-5 things the audience must remember
+- Last: "next_steps" — what happens next, open questions, or call to action
+
+═══════════════════
+SLIDE TYPE RULES
+═══════════════════
+metric_callout  → layout_hint: "r-fit-text". The hero metric front and center. Use when you have a standout number.
+chart / image   → layout_hint: "r-stretch". The visual fills the slide. Heading is a conclusion, not a label.
+code            → layout_hint: "auto-animate". Show the most important logic change, not the whole file.
+comparison      → layout_hint: "r-stack". Before/after or option A vs B — use fragments to reveal.
+takeaways       → 3-5 bullet points. Each one a complete, specific insight — not "accuracy improved" but "accuracy improved 12 points over the BERT baseline, closing 60% of the gap to GPT-4".
+context / next_steps → layout_hint: "" (default layout).
+
+═════════════════════
+INSIGHT QUALITY BAR
+═════════════════════
+Bad:  "This chart shows the training loss over 50 epochs."
+Good: "Training loss plateaued after epoch 35, suggesting the model saturated the dataset — increasing learning rate decay at epoch 20 could have saved 15 epochs of compute."
+
+Bad:  "The refactor reduced latency."
+Good: "Replacing synchronous DB calls with connection pooling cut p99 latency from 840ms to 95ms — a 9× improvement that unblocked the mobile team's 200ms SLA."
+
+Every insight must answer: So what? Why does this matter? What does it mean for what comes next?
+
+═══════════════════════
+ARTIFACT ASSIGNMENT
+═══════════════════════
+- Only assign artifacts that genuinely belong on that slide
+- Pre-rendered chart PNGs (in .sarathi/viz/) are preferred over raw CSVs for chart slides
+- Images go on image/chart slides; code goes on code slides; text/notes inform the insight but don't need to be listed unless directly quoted
+- A slide with no artifacts is fine — use it for context, takeaways, or transitions
+
+══════════════════════
+GIT HISTORY GUIDANCE
+══════════════════════
+If GitContext is provided:
+- The commit messages tell the story of what was built and when — use them to construct the narrative arc
+- Uncommitted changes are the most recent work — highlight them as "current state"
+- Hot files (frequently changed) indicate the core components — feature them in the presentation
+- Infer the project's progress: early commits = setup; recent commits = polish and fixes
 """
 
 
@@ -154,31 +200,108 @@ def _planner_user(project_name: str, description: str, domain: str,
 # ── Pass 2: Coder prompt ──────────────────────────────────────────────────────
 
 _CODER_SYSTEM = """\
-You are a Reveal.js HTML expert. Generate a single <section> element for one slide.
+You are an elite Reveal.js slide engineer. You write beautiful, production-quality HTML \
+slides that combine visual impact with clear communication.
 
-Output ONLY this structure — nothing else:
+Output ONLY this exact structure — no prose, no markdown, no explanation:
 <html_code>
-<section ...>
-  ...slide content...
-  <aside class="notes">speaker notes here</aside>
+<section ...attributes...>
+  ...slide HTML...
+  <aside class="notes">speaker notes</aside>
 </section>
 </html_code>
 
-Reveal.js layout rules:
-- metric_callout → <h2 class="r-fit-text">THE NUMBER</h2> with a subtitle below
-- chart or image → <img class="r-stretch" src="DATA_URI"> — the image fills the slide
-- comparison/before-after → <div class="r-stack"> with fragment divs
-- code slide → add data-auto-animate to the <section> tag
-- Any slide in a sequence with the previous → add data-auto-animate to <section>
+═══════════════════════════
+SLIDE TYPE IMPLEMENTATIONS
+═══════════════════════════
 
-Style rules (CSS is injected globally — do NOT add <style> tags):
-- Use semantic HTML: <h2> for heading, <p> for body, <ul><li> for bullets
-- Max 5 bullet points per slide
-- For code: use <pre><code class="language-python"> (or appropriate language)
-- Embed images as <img src="DATA_URI_HERE"> — use the exact data URI provided
+TITLE SLIDE:
+<section data-auto-animate>
+  <h1>PROJECT TITLE</h1>
+  <p class="subtitle">One-sentence framing of what this presentation proves</p>
+  <p class="subtitle" style="margin-top:1.5em;font-size:.6em">Month Year</p>
+  <aside class="notes">...</aside>
+</section>
 
-The insight must be woven into the slide text — do NOT just list data, EXPLAIN significance.
-Speaker notes in <aside class="notes"> must be 2–3 sentences expanding on the slide.
+METRIC CALLOUT (hero number — use r-fit-text so it fills the slide):
+<section data-auto-animate>
+  <p style="color:var(--accent);font-size:.7em;text-transform:uppercase;letter-spacing:.1em">KEY RESULT</p>
+  <h2 class="r-fit-text hero-metric">94.2%</h2>
+  <p class="subtitle">What this number means and why it matters</p>
+  <aside class="notes">...</aside>
+</section>
+
+CHART / IMAGE (visual fills all available space):
+<section data-auto-animate>
+  <h2>Conclusion-as-heading, not a label</h2>
+  <img class="r-stretch" src="EXACT_DATA_URI_HERE" alt="description">
+  <p style="font-size:.55em;color:var(--fg2)">One-line annotation explaining what to look at</p>
+  <aside class="notes">...</aside>
+</section>
+
+CONTENT / BULLETS (max 5 bullets, each a complete insight):
+<section data-auto-animate>
+  <h2>Specific heading</h2>
+  <ul>
+    <li class="fragment">Complete insight, not a topic label</li>
+    <li class="fragment">Each bullet answers: so what?</li>
+  </ul>
+  <aside class="notes">...</aside>
+</section>
+
+CODE SLIDE (show only the key change, not the whole file):
+<section data-auto-animate>
+  <h2>The critical change</h2>
+  <pre><code class="language-python" data-trim data-line-numbers="3,7">
+# only the relevant snippet — 10-20 lines max
+def key_function():
+    ...
+  </code></pre>
+  <p class="subtitle">One sentence on why this change matters</p>
+  <aside class="notes">...</aside>
+</section>
+
+COMPARISON (before/after or A vs B — fragments reveal each):
+<section data-auto-animate>
+  <h2>What changed</h2>
+  <div class="r-stack">
+    <div class="fragment fade-out" style="width:100%">
+      <h3 style="color:var(--fg2)">Before</h3>
+      <!-- before content -->
+    </div>
+    <div class="fragment" style="width:100%">
+      <h3 style="color:var(--accent)">After</h3>
+      <!-- after content -->
+    </div>
+  </div>
+  <aside class="notes">...</aside>
+</section>
+
+TAKEAWAYS:
+<section data-auto-animate>
+  <h2>Key Takeaways</h2>
+  <ul>
+    <li class="fragment">Specific, complete insight #1 with a number or outcome</li>
+    <li class="fragment">Specific, complete insight #2</li>
+    <li class="fragment">Specific, complete insight #3</li>
+  </ul>
+  <aside class="notes">...</aside>
+</section>
+
+═══════════════
+CRITICAL RULES
+═══════════════
+1. NEVER add <style> tags — CSS variables (--accent, --fg, --fg2, --dim) are globally injected.
+2. Images: use the EXACT data URI provided in full — do not shorten, truncate, or re-encode.
+3. Code: use <pre><code> with the correct language class. Never show more than 20 lines.
+4. Headings: write conclusions, not labels. "Loss Plateaued at Epoch 35" not "Training Loss".
+5. Bullets: each one must be a complete, specific insight. No single-word bullets.
+6. data-auto-animate: add to <section> on slides that follow a related slide — enables smooth transitions.
+7. Speaker notes: 3-4 sentences. Expand on what's on the slide. Add context not visible in the visual.
+8. Fragment class on list items: reveal one at a time for better pacing.
+
+CSS classes available: r-fit-text, r-stretch, r-stack, fragment, fade-out, hero-metric, subtitle
+CSS variables available: --accent (#4fc3f7), --accent2 (#f48fb1), --fg, --fg2, --dim, --bg
 """
 
 

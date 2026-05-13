@@ -653,16 +653,17 @@ cli.add_command(antar_cmd)
 @click.argument("model_name")
 def pull_cmd(model_name):
     """Download an Ollama model. Recommended: kimi-k2.5:cloud or qwen3.5."""
-    import ollama
+    import subprocess
     console.print(f"[dim]Pulling [bold]{model_name}[/bold]...[/dim]")
     try:
-        for progress in ollama.pull(model_name, stream=True):
-            status = getattr(progress, "status", "")
-            if status:
-                console.print(f"[dim]{status}[/dim]", end="\r")
-        console.print(f"\n[green]Model [bold]{model_name}[/bold] ready.[/green]")
-    except Exception as exc:
-        console.print(f"[red]Pull failed: {exc}[/red]")
+        result = subprocess.run(["ollama", "pull", model_name])
+        if result.returncode == 0:
+            console.print(f"[green]Model [bold]{model_name}[/bold] ready.[/green]")
+        else:
+            console.print(f"[red]Pull failed for {model_name}.[/red]")
+            raise SystemExit(1)
+    except FileNotFoundError:
+        console.print("[red]ollama not found. Run: sarathi setup[/red]")
         raise SystemExit(1)
 
 

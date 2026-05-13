@@ -285,17 +285,10 @@ def run() -> None:
             )
         else:
             try:
-                proc = subprocess.Popen(
-                    ["ollama", "pull", name],
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-                )
-                for line in proc.stdout:
-                    line = line.strip()
-                    if line:
-                        console.print(f"  [dim]{line}[/dim]", end="\r")
-                proc.wait()
-                if proc.returncode == 0:
-                    console.print(f"  [green]✓ {display} ready.[/green]          ")
+                # Run directly in the terminal so ollama's own progress bar renders cleanly
+                result = subprocess.run(["ollama", "pull", name])
+                if result.returncode == 0:
+                    console.print(f"  [green]✓ {display} ready.[/green]")
                 else:
                     console.print(f"  [red]✗ Pull failed for {name}.[/red]")
             except FileNotFoundError:

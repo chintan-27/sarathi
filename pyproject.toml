@@ -27,12 +27,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Utilities",
 ]
-
-[project.urls]
-Homepage   = "https://github.com/chintan-27/sarathi"
-Repository = "https://github.com/chintan-27/sarathi"
-Issues     = "https://github.com/chintan-27/sarathi/issues"
-
 dependencies = [
     "click>=8.0",
     "watchdog>=3.0",
@@ -48,6 +42,11 @@ dependencies = [
     "anthropic>=0.40",
     "psutil>=5.9",
 ]
+
+[project.urls]
+Homepage   = "https://github.com/chintan-27/sarathi"
+Repository = "https://github.com/chintan-27/sarathi"
+Issues     = "https://github.com/chintan-27/sarathi/issues"
 
 [project.scripts]
 sarathi = "sarathi.cli:cli"

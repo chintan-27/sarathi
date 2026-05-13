@@ -116,18 +116,36 @@ def _detect_gpu() -> tuple[str, float]:
 
 # ── Ollama detection ───────────────────────────────────────────────────────────
 
-def check_ollama() -> tuple[bool, bool]:
-    """Returns (is_installed, is_running)."""
-    installed = shutil.which("ollama") is not None
-    if not installed:
-        return False, False
+_OLLAMA_PATHS = [
+    "ollama",                          # already in PATH
+    "/usr/local/bin/ollama",           # default Linux install
+    "/usr/bin/ollama",
+    str(Path.home() / ".local/bin/ollama"),
+    "/opt/homebrew/bin/ollama",        # macOS Homebrew (Apple Silicon)
+    "/usr/local/opt/ollama/bin/ollama",# macOS Homebrew (Intel)
+]
+
+
+def _ollama_bin() -> str | None:
+    """Return the first usable ollama binary path, or None."""
+    for p in _OLLAMA_PATHS:
+        if shutil.which(p) or Path(p).is_file():
+            return p
+    return None
+
+
+def check_ollama() -> tuple[bool, bool, str | None]:
+    """Returns (is_installed, is_running, binary_path)."""
+    bin_path = _ollama_bin()
+    if not bin_path:
+        return False, False, None
     try:
         result = subprocess.run(
-            ["ollama", "list"], capture_output=True, text=True, timeout=5
+            [bin_path, "list"], capture_output=True, text=True, timeout=5
         )
-        return True, result.returncode == 0
+        return True, result.returncode == 0, bin_path
     except Exception:
-        return True, False
+        return True, False, bin_path
 
 
 def ollama_install_hint(os_name: str) -> str:
@@ -209,22 +227,21 @@ def run() -> None:
 
     # ── Ollama check ───────────────────────────────────────────────────────────
     console.print("[bold]Checking Ollama...[/bold]")
-    installed, running = check_ollama()
+    installed, running, ollama_bin = check_ollama()
 
     if not installed:
         console.print(f"[red]  ✗ Ollama not found.[/red]")
         console.print(f"  Install it: [cyan]{ollama_install_hint(hw['os'])}[/cyan]")
         console.print(
-            "  Then re-run [bold]sarathi setup[/bold] or "
-            "[bold]ollama launch claude[/bold] to use Claude models."
+            "  Then open a [bold]new terminal[/bold] and re-run [bold]sarathi setup[/bold]."
         )
         console.print()
     elif not running:
-        console.print("[yellow]  ⚠ Ollama is installed but not running.[/yellow]")
-        console.print("  Start it:  [cyan]ollama serve[/cyan]  (in a separate terminal)")
+        console.print(f"[yellow]  ⚠ Ollama found at {ollama_bin} but not running.[/yellow]")
+        console.print(f"  Start it:  [cyan]{ollama_bin} serve[/cyan]  (in a separate terminal)")
         console.print()
     else:
-        console.print("  [green]✓ Ollama is installed and running.[/green]")
+        console.print(f"  [green]✓ Ollama running[/green] [dim]({ollama_bin})[/dim]")
         console.print()
 
     # ── Model selection ────────────────────────────────────────────────────────
@@ -284,15 +301,25 @@ def run() -> None:
                 "  [dim]Cloud model — no download needed, routed via Ollama at runtime.[/dim]"
             )
         else:
-            try:
-                # Run directly in the terminal so ollama's own progress bar renders cleanly
-                result = subprocess.run(["ollama", "pull", name])
-                if result.returncode == 0:
-                    console.print(f"  [green]✓ {display} ready.[/green]")
-                else:
-                    console.print(f"  [red]✗ Pull failed for {name}.[/red]")
-            except FileNotFoundError:
-                console.print("  [red]✗ ollama not found — skipping pull.[/red]")
+            bin_ = ollama_bin or _ollama_bin()
+            if not bin_:
+                console.print(
+                    "  [red]✗ ollama not in PATH.[/red] "
+                    "Open a new terminal and run [cyan]sarathi setup[/cyan] again, "
+                    "or pull manually: [cyan]ollama pull " + name + "[/cyan]"
+                )
+            else:
+                try:
+                    result = subprocess.run([bin_, "pull", name])
+                    if result.returncode == 0:
+                        console.print(f"  [green]✓ {display} ready.[/green]")
+                    else:
+                        console.print(f"  [red]✗ Pull failed for {name}.[/red]")
+                except FileNotFoundError:
+                    console.print(
+                        f"  [red]✗ Could not run {bin_}.[/red] "
+                        f"Try: [cyan]ollama pull {name}[/cyan] in a new terminal."
+                    )
 
         if primary_model is None:
             primary_model = name

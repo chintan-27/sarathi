@@ -20,3 +20,7 @@ env/
 
 # playwright
 .playwright/
+
+# Claude Code
+CLAUDE.md
+.claude/

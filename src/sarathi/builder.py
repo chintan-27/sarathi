@@ -125,9 +125,14 @@ Rules:
 
 
 def _planner_user(project_name: str, description: str, domain: str,
-                  files: list[ResultFile]) -> str:
+                  files: list[ResultFile],
+                  git_ctx_text: str | None = None) -> str:
     dc = _DOMAIN_CONFIG.get(domain, _DOMAIN_CONFIG["ml"])
     file_list = "\n".join(f"  - [{f.type}] {f.path}" for f in files)
+
+    git_block = ""
+    if git_ctx_text:
+        git_block = f"\n<GitContext>\n{git_ctx_text}\n</GitContext>\n"
 
     return (
         f"<ProjectContext>\n"
@@ -139,7 +144,8 @@ def _planner_user(project_name: str, description: str, domain: str,
         f"Tone: {dc['tone']}\n"
         f"Hero metric hint: {dc['hero_hint']}\n"
         f"Special instructions: {dc['special']}\n"
-        f"</ProjectContext>\n\n"
+        f"</ProjectContext>\n"
+        f"{git_block}\n"
         f"<ArtifactList>\n{file_list}\n</ArtifactList>\n\n"
         f"Generate the JSON outline now."
     )
@@ -361,6 +367,7 @@ def generate(
     theme: str = "dark-gradient",
     outline_path: Path | None = None,
     domain_override: str | None = None,
+    git_ctx_text: str | None = None,
 ) -> None:
     from . import viz as viz_module
 
@@ -370,7 +377,6 @@ def generate(
 
     # Build artifacts lookup
     artifacts_map: dict[str, ResultFile] = {rf.path: rf for rf in all_files}
-    # Also index by filename for loose matching
     for rf in all_files:
         artifacts_map[rf.filename] = rf
 
@@ -380,7 +386,9 @@ def generate(
     if outline_path and outline_path.exists():
         outline = json.loads(outline_path.read_text(encoding="utf-8"))
     else:
-        outline = _generate_outline(project_name, description, domain, all_files, model)
+        outline = _generate_outline(
+            project_name, description, domain, all_files, model, git_ctx_text
+        )
         if outline_path:
             outline_path.parent.mkdir(parents=True, exist_ok=True)
             outline_path.write_text(
@@ -447,8 +455,9 @@ def _generate_outline(
     domain: str,
     files: list[ResultFile],
     model: str,
+    git_ctx_text: str | None = None,
 ) -> dict:
-    user_msg = _planner_user(project_name, description, domain, files)
+    user_msg = _planner_user(project_name, description, domain, files, git_ctx_text)
     text = _chat(model, _PLANNER_SYSTEM, user_msg)
     return _extract_json(text)
 

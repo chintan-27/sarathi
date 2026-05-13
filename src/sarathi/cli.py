@@ -15,6 +15,7 @@ from . import tracker as trk
 from . import config as cfg
 from . import portfolio as ptf
 from . import setup_wizard
+from . import git_context as gitctx
 
 console = Console()
 
@@ -47,8 +48,9 @@ def cli():
     \b
     Quick start:
       sarathi setup                          first-time setup
-      sarathi init "name" "description"      create a project
-      sarathi track <folder>/                watch + auto-generate
+      sarathi init "name" "description"      create a new project
+      sarathi join <folder>/                 join an existing project (reads git history)
+      sarathi track <folder>/                watch + auto-generate on file changes
       sarathi mark <folder>/ --name "v1"     plant a milestone
       sarathi portfolio                      dashboard at localhost:7432
 
@@ -159,6 +161,12 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool):
         f"{len(milestones)} milestone(s), last generated: {last_gen or 'never'}"
     )
 
+    # Git context — extracted once and reused across all generate() calls
+    git_ctx = gitctx.extract(project_dir)
+    if git_ctx:
+        gitctx.print_summary(git_ctx, console)
+    git_ctx_text = gitctx.format_for_llm(git_ctx) if git_ctx else None
+
     outline_path = (project_dir / ".sarathi" / "outline.json") if edit_outline else None
 
     def generate():
@@ -195,6 +203,7 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool):
                 project_dir=project_dir,
                 theme=theme,
                 outline_path=outline_path,
+                git_ctx_text=git_ctx_text,
             )
             trk.log_event(project_dir, "generated",
                           html=str(html_out.relative_to(project_dir)),
@@ -687,3 +696,52 @@ def setup_cmd():
 
 
 cli.add_command(setup_cmd)
+
+
+# ── join ──────────────────────────────────────────────────────────────────────
+
+@click.command("join")
+@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.option("--model", default=None, help="Override the Ollama model.")
+@click.option("--once", is_flag=True, help="Generate once and exit.")
+def join_cmd(folder, model, once):
+    """Join an existing project — reads git history and local changes as context.
+
+    \b
+    Use this when you're picking up a project that already has work done:
+      sarathi join my-project/        scan git log, diff, files → generate
+      sarathi join my-project/ --once generate once and exit
+    \b
+    Sarathi will read:
+      - git log (last 30 commits, commit messages, dates)
+      - uncommitted changes (git diff)
+      - most actively changed files
+      - all result files (images, CSVs, notes, code)
+    and build a presentation that tells the story of where the project is now.
+    """
+    project_dir = Path(folder).resolve()
+
+    # Auto-create project.json if missing (joining a non-sarathi project)
+    meta_path = project_dir / "project.json"
+    if not meta_path.exists():
+        console.print(
+            f"[dim][sarathi][/dim] No project.json found — "
+            "let's set up basic metadata for this project."
+        )
+        name = click.prompt("  Project name", default=project_dir.name)
+        description = click.prompt("  One-line description")
+        import json as _json
+        from datetime import datetime as _dt
+        meta = {
+            "name": name,
+            "description": description,
+            "created": _dt.now().isoformat(timespec="seconds"),
+            "model": model or "claude-code",
+        }
+        meta_path.write_text(_json.dumps(meta, indent=2), encoding="utf-8")
+        console.print(f"[green]  Created project.json[/green]")
+
+    _track_impl(folder, once, model, edit_outline=False)
+
+
+cli.add_command(join_cmd)

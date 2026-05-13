@@ -317,19 +317,18 @@ def run() -> None:
             f"(saved to ~/.config/sarathi/config.json)[/green]"
         )
 
-    # ── Claude via Ollama ──────────────────────────────────────────────────────
+    # ── How Sarathi uses Ollama ────────────────────────────────────────────────
     console.print()
     console.print(Panel(
-        "[bold cyan]Using Claude models via Ollama[/bold cyan]\n\n"
-        "Sarathi routes all LLM calls through Ollama's Anthropic-compatible API.\n"
-        "No Anthropic account needed — everything stays local.\n\n"
-        "[bold]Option 1 — Quick launch (recommended):[/bold]\n"
-        "  [cyan]ollama launch claude --model kimi-k2.5:cloud[/cyan]\n\n"
-        "[bold]Option 2 — Manual env vars:[/bold]\n"
-        "  [cyan]export ANTHROPIC_BASE_URL=http://localhost:11434[/cyan]\n"
-        "  [cyan]export ANTHROPIC_AUTH_TOKEN=ollama[/cyan]\n"
-        "  [cyan]sarathi rachna myproject/[/cyan]\n\n"
-        "[dim]Sarathi also sets these automatically if not present.[/dim]",
+        "[bold cyan]How Sarathi uses Ollama[/bold cyan]\n\n"
+        "Sarathi calls the Anthropic Python SDK pointed at Ollama's\n"
+        "Anthropic-compatible API at [bold]http://localhost:11434[/bold].\n"
+        "No Anthropic account or API key needed — everything runs locally.\n\n"
+        "[bold]Just make sure Ollama is running and your model is pulled:[/bold]\n"
+        "  [cyan]ollama serve[/cyan]\n"
+        "  [cyan]ollama pull qwen3.5[/cyan]\n"
+        "  [cyan]sarathi track myproject/[/cyan]\n\n"
+        "[dim]Sarathi auto-configures the API endpoint — no env vars needed.[/dim]",
         border_style="cyan",
     ))
 

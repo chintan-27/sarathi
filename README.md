@@ -17,34 +17,35 @@ sarathi setup
 
 ---
 
-## Using Claude models via Ollama
+## How Sarathi uses Ollama
 
-Sarathi uses Ollama's Anthropic-compatible API — so you get Claude-quality output running entirely on your own machine.
+Sarathi uses the **Anthropic Python SDK pointed at Ollama's Anthropic-compatible API** (`http://localhost:11434`). No Anthropic account or API key needed — everything runs on your machine.
 
 ```bash
-# Recommended: launch Claude Code through Ollama
-ollama launch claude --model kimi-k2.5:cloud
+# 1. Make sure Ollama is running
+ollama serve
 
-# Then use Sarathi normally — it auto-connects
-sarathi join my-project/
+# 2. Pull a model
+ollama pull qwen3.5
+
+# 3. Run Sarathi — it auto-connects to Ollama
+sarathi track my-project/
 ```
 
-Or set env vars manually and use any model:
+Sarathi auto-configures the API endpoint. You can also override the model per-run:
 
 ```bash
-export ANTHROPIC_BASE_URL=http://localhost:11434
-export ANTHROPIC_AUTH_TOKEN=ollama
-sarathi track my-project/ --model qwen3.5
+sarathi track my-project/ --model kimi-k2.5:cloud
 ```
 
 **Recommended models:**
 
-| Model | Notes |
-|---|---|
-| `kimi-k2.5:cloud` | Best overall — cloud-routed, no local RAM needed |
-| `qwen3.5` | Fast local 8B, great structured output |
-| `glm-5:cloud` | Strong reasoning, good for data analysis |
-| `llama3.2-vision` | Best for image-heavy projects |
+| Model | RAM needed | Notes |
+|---|---|---|
+| `qwen3.5` | ~6 GB | Default — fast, great structured HTML output |
+| `kimi-k2.5:cloud` | cloud | No local RAM — routed via Ollama to cloud |
+| `glm-5:cloud` | cloud | Strong reasoning, good for data analysis decks |
+| `llama3.2-vision` | ~8 GB | Best for image-heavy projects |
 
 ---
 

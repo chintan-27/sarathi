@@ -7,7 +7,7 @@ _GLOBAL_CONFIG_DIR = Path.home() / ".config" / "sarathi"
 _SARATHI_DIR = ".sarathi"
 
 DEFAULTS: dict = {
-    "model": "claude-code",
+    "model": "qwen3.5",
     "theme": "dark-gradient",
     "domain": "auto",
 }

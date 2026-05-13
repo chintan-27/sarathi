@@ -19,7 +19,7 @@ from . import git_context as gitctx
 
 console = Console()
 
-DEFAULT_MODEL = "claude-code"
+DEFAULT_MODEL = "qwen3.5"
 
 VISION_MODEL_KEYWORDS = {"llava", "vision", "vl", "gemma3", "minicpm"}
 

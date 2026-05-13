@@ -42,7 +42,20 @@ def _dual(english: str, sanskrit: str):
 
 @click.group()
 def cli():
-    """Sarathi — your personal project companion. Turns raw results into polished presentations."""
+    """Sarathi — turn project results into polished presentations.
+
+    \b
+    Quick start:
+      sarathi setup                          first-time setup
+      sarathi init "name" "description"      create a project
+      sarathi track <folder>/                watch + auto-generate
+      sarathi mark <folder>/ --name "v1"     plant a milestone
+      sarathi portfolio                      dashboard at localhost:7432
+
+    \b
+    Sanskrit aliases work too: arambh, yatra, bana, padav, safar, haal, dekh, antar.
+    Run any command with --help for details.
+    """
 
 
 # ── helper to register dual-named commands ────────────────────────────────────
@@ -94,17 +107,17 @@ def _init_impl(name: str, description: str, model: str):
 @click.option("--model", default=DEFAULT_MODEL, show_default=True,
               help="Ollama model to use for generation.")
 def init_cmd(name, description, model):
-    """Scaffold a new project folder. (Sanskrit: arambh)"""
+    """Create a new project folder with data/, plots/, and notes/ subdirs."""
     _init_impl(name, description, model)
 
 
-@click.command("arambh")
+@click.command("arambh", hidden=True)
 @click.argument("name")
 @click.argument("description")
 @click.option("--model", default=DEFAULT_MODEL, show_default=True,
               help="Ollama model to use for generation.")
 def arambh_cmd(name, description, model):
-    """Scaffold a new project folder. (arambh = beginning)"""
+    """Create a new project folder. (arambh = beginning)"""
     _init_impl(name, description, model)
 
 
@@ -216,18 +229,22 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool):
 @click.option("--edit-outline", is_flag=True,
               help="Save JSON outline for editing before rendering slides.")
 def track_cmd(folder, once, model, edit_outline):
-    """Track a project folder and generate presentations. (Sanskrit: yatra)"""
+    """Watch a project folder and regenerate on every file change.
+
+    Scans for new results, pre-renders charts, calls the LLM, and writes
+    HTML + PDF + PPTX to output/. Ctrl-C to stop watching.
+    """
     _track_impl(folder, once, model, edit_outline)
 
 
-@click.command("yatra")
+@click.command("yatra", hidden=True)
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 @click.option("--once", is_flag=True, help="Generate once and exit.")
 @click.option("--model", default=None, help="Override the Ollama model.")
 @click.option("--edit-outline", is_flag=True,
               help="Save JSON outline for editing before rendering slides.")
 def yatra_cmd(folder, once, model, edit_outline):
-    """Track a project folder and generate presentations. (yatra = journey)"""
+    """Watch a project folder and regenerate on every file change. (yatra = journey)"""
     _track_impl(folder, once, model, edit_outline)
 
 
@@ -243,16 +260,19 @@ cli.add_command(yatra_cmd)
 @click.option("--model", default=None, help="Override the Ollama model.")
 @click.option("--edit-outline", is_flag=True)
 def make_cmd(folder, once, model, edit_outline):
-    """Generate a presentation (one-shot). (Sanskrit: rachna)"""
+    """Generate a presentation once and exit (no watching).
+
+    Use --edit-outline to inspect and edit the narrative plan before slides render.
+    """
     _track_impl(folder, True, model, edit_outline)
 
 
-@click.command("bana")
+@click.command("bana", hidden=True)
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 @click.option("--model", default=None, help="Override the Ollama model.")
 @click.option("--edit-outline", is_flag=True)
 def bana_cmd(folder, model, edit_outline):
-    """Generate a presentation (one-shot). (bana = build)"""
+    """Generate a presentation once and exit. (bana = build)"""
     _track_impl(folder, True, model, edit_outline)
 
 
@@ -274,15 +294,18 @@ def _mark_impl(folder: str, name: str):
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 @click.option("--name", required=True, help="Milestone label.")
 def mark_cmd(folder, name):
-    """Mark a milestone in the project timeline. (Sanskrit: chinh)"""
+    """Plant a named milestone in the project timeline.
+
+    Snapshots the current file state so you can diff or regenerate at this point later.
+    """
     _mark_impl(folder, name)
 
 
-@click.command("padav")
+@click.command("padav", hidden=True)
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 @click.option("--name", required=True, help="Milestone label.")
 def padav_cmd(folder, name):
-    """Mark a milestone in the project timeline. (padav = waypoint)"""
+    """Plant a named milestone in the timeline. (padav = waypoint)"""
     _mark_impl(folder, name)
 
 
@@ -327,14 +350,14 @@ def _log_impl(folder: str):
 @click.command("log")
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 def log_cmd(folder):
-    """Show the project timeline. (Sanskrit: itihas)"""
+    """Print the full project timeline — file events, checkpoints, and milestones."""
     _log_impl(folder)
 
 
-@click.command("safar")
+@click.command("safar", hidden=True)
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 def safar_cmd(folder):
-    """Show the project timeline. (safar = travelogue)"""
+    """Print the full project timeline. (safar = travelogue)"""
     _log_impl(folder)
 
 
@@ -373,11 +396,11 @@ def _status_impl(folder: str):
 @click.command("status")
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 def status_cmd(folder):
-    """Show current project state. (Sanskrit: sthiti)"""
+    """Show model, theme, last generation time, and files changed since then."""
     _status_impl(folder)
 
 
-@click.command("haal")
+@click.command("haal", hidden=True)
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 def haal_cmd(folder):
     """Show current project state. (haal = current state)"""
@@ -403,14 +426,14 @@ def _open_impl(folder: str):
 @click.command("open")
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 def open_cmd(folder):
-    """Open the latest presentation in a browser. (Sanskrit: darshan)"""
+    """Open output/presentation.html in the default browser."""
     _open_impl(folder)
 
 
-@click.command("dekh")
+@click.command("dekh", hidden=True)
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 def dekh_cmd(folder):
-    """Open the latest presentation in a browser. (dekh = look/see)"""
+    """Open the presentation in browser. (dekh = look/see)"""
     _open_impl(folder)
 
 
@@ -424,7 +447,7 @@ cli.add_command(dekh_cmd)
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 @click.option("--yes", is_flag=True, help="Skip confirmation.")
 def clean_cmd(folder, yes):
-    """Wipe output/ and .sarathi/viz/ cache."""
+    """Delete output/ and .sarathi/viz/ to force a clean regeneration."""
     project_dir = Path(folder).resolve()
     targets = [project_dir / "output", project_dir / ".sarathi" / "viz"]
     if not yes:
@@ -447,7 +470,7 @@ cli.add_command(clean_cmd)
 
 @click.command("models")
 def models_cmd():
-    """List available Ollama models, flagging vision-capable ones."""
+    """List Ollama models on this machine, flagging vision-capable ones."""
     import ollama
     try:
         result = ollama.list()
@@ -597,11 +620,11 @@ def _diff_impl(folder: str, from_label: str, to_label: str, model: str | None):
 @click.option("--to", "to_label", required=True, help="Ending milestone label.")
 @click.option("--model", default=None)
 def diff_cmd(folder, from_label, to_label, model):
-    """Generate a progress presentation between two milestones. (Sanskrit: antar)"""
+    """Generate a "what changed" presentation between two milestones."""
     _diff_impl(folder, from_label, to_label, model)
 
 
-@click.command("antar")
+@click.command("antar", hidden=True)
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 @click.option("--from", "from_label", required=True, help="Starting milestone label.")
 @click.option("--to", "to_label", required=True, help="Ending milestone label.")
@@ -620,7 +643,7 @@ cli.add_command(antar_cmd)
 @click.command("pull")
 @click.argument("model_name")
 def pull_cmd(model_name):
-    """Pull an Ollama model with a progress indicator."""
+    """Download an Ollama model. Recommended: kimi-k2.5:cloud or qwen3.5."""
     import ollama
     console.print(f"[dim]Pulling [bold]{model_name}[/bold]...[/dim]")
     try:
@@ -644,10 +667,7 @@ cli.add_command(pull_cmd)
 @click.option("--add", "extra_dirs", multiple=True,
               help="Extra project folders to include in this session.")
 def portfolio_cmd(port, extra_dirs):
-    """Launch the Sarathi portfolio dashboard at localhost.
-
-    Shows all tracked projects, milestones, and presentation links.
-    """
+    """Launch a dashboard showing all projects, milestones, and output links."""
     console.print(
         f"[dim][sarathi][/dim] Starting portfolio dashboard on "
         f"[bold cyan]http://localhost:{port}[/bold cyan]"

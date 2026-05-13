@@ -5,12 +5,37 @@ build-backend = "hatchling.build"
 [project]
 name = "sarathi"
 version = "0.1.0"
-description = "AI-powered results-to-presentation tool"
+description = "CLI project companion that turns results into polished presentations using local LLMs via Ollama"
+readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Chintan", email = "chintan.acharya27@gmail.com" }]
+keywords = [
+    "presentation", "llm", "ollama", "reveal.js", "cli",
+    "ml", "data-science", "research", "pptx",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Utilities",
+]
+
+[project.urls]
+Homepage   = "https://github.com/chintan-27/sarathi"
+Repository = "https://github.com/chintan-27/sarathi"
+Issues     = "https://github.com/chintan-27/sarathi/issues"
+
 dependencies = [
     "click>=8.0",
     "watchdog>=3.0",
-    "ollama>=0.3",
     "playwright>=1.40",
     "Pillow>=10.0",
     "rich>=13.0",

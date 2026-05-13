@@ -247,17 +247,17 @@ def make_cmd(folder, once, model, edit_outline):
     _track_impl(folder, True, model, edit_outline)
 
 
-@click.command("rachna")
+@click.command("bana")
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 @click.option("--model", default=None, help="Override the Ollama model.")
 @click.option("--edit-outline", is_flag=True)
-def rachna_cmd(folder, model, edit_outline):
-    """Generate a presentation (one-shot). (rachna = creation)"""
+def bana_cmd(folder, model, edit_outline):
+    """Generate a presentation (one-shot). (bana = build)"""
     _track_impl(folder, True, model, edit_outline)
 
 
 cli.add_command(make_cmd)
-cli.add_command(rachna_cmd)
+cli.add_command(bana_cmd)
 
 
 # ── mark / chinh ──────────────────────────────────────────────────────────────
@@ -278,16 +278,16 @@ def mark_cmd(folder, name):
     _mark_impl(folder, name)
 
 
-@click.command("chinh")
+@click.command("padav")
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 @click.option("--name", required=True, help="Milestone label.")
-def chinh_cmd(folder, name):
-    """Mark a milestone in the project timeline. (chinh = waypoint)"""
+def padav_cmd(folder, name):
+    """Mark a milestone in the project timeline. (padav = waypoint)"""
     _mark_impl(folder, name)
 
 
 cli.add_command(mark_cmd)
-cli.add_command(chinh_cmd)
+cli.add_command(padav_cmd)
 
 
 # ── log / itihas ──────────────────────────────────────────────────────────────
@@ -331,15 +331,15 @@ def log_cmd(folder):
     _log_impl(folder)
 
 
-@click.command("itihas")
+@click.command("safar")
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
-def itihas_cmd(folder):
-    """Show the project timeline. (itihas = chronicle)"""
+def safar_cmd(folder):
+    """Show the project timeline. (safar = travelogue)"""
     _log_impl(folder)
 
 
 cli.add_command(log_cmd)
-cli.add_command(itihas_cmd)
+cli.add_command(safar_cmd)
 
 
 # ── status / sthiti ───────────────────────────────────────────────────────────
@@ -377,15 +377,15 @@ def status_cmd(folder):
     _status_impl(folder)
 
 
-@click.command("sthiti")
+@click.command("haal")
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
-def sthiti_cmd(folder):
-    """Show current project state. (sthiti = current state)"""
+def haal_cmd(folder):
+    """Show current project state. (haal = current state)"""
     _status_impl(folder)
 
 
 cli.add_command(status_cmd)
-cli.add_command(sthiti_cmd)
+cli.add_command(haal_cmd)
 
 
 # ── open / darshan ────────────────────────────────────────────────────────────
@@ -407,15 +407,15 @@ def open_cmd(folder):
     _open_impl(folder)
 
 
-@click.command("darshan")
+@click.command("dekh")
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
-def darshan_cmd(folder):
-    """Open the latest presentation in a browser. (darshan = viewing)"""
+def dekh_cmd(folder):
+    """Open the latest presentation in a browser. (dekh = look/see)"""
     _open_impl(folder)
 
 
 cli.add_command(open_cmd)
-cli.add_command(darshan_cmd)
+cli.add_command(dekh_cmd)
 
 
 # ── clean ─────────────────────────────────────────────────────────────────────

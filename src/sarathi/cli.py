@@ -14,6 +14,7 @@ from . import builder, exporter, scanner, watcher
 from . import tracker as trk
 from . import config as cfg
 from . import portfolio as ptf
+from . import setup_wizard
 
 console = Console()
 
@@ -655,3 +656,14 @@ def portfolio_cmd(port, extra_dirs):
 
 
 cli.add_command(portfolio_cmd)
+
+
+# ── setup ─────────────────────────────────────────────────────────────────────
+
+@click.command("setup")
+def setup_cmd():
+    """Interactive setup: detect hardware, pick and pull models, configure Sarathi."""
+    setup_wizard.run()
+
+
+cli.add_command(setup_cmd)

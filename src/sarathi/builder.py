@@ -415,26 +415,21 @@ def generate(
 
 
 _OLLAMA_BASE = "http://localhost:11434"
+_OLLAMA_KEY  = "ollama"
 
 
 def _chat(model: str, system: str, user: str) -> str:
     """Call LLM via Anthropic SDK routed through Ollama's compatible API.
 
-    Sarathi always uses Ollama as the backend. If ANTHROPIC_BASE_URL is not
-    already set (e.g. by `ollama launch claude`), we set it automatically so
-    the Anthropic SDK talks to the local Ollama server at port 11434.
+    Values are passed directly to the client — os.environ is never modified,
+    so this cannot interfere with Claude Code or any other tool in the shell.
     """
     import anthropic
 
-    # Auto-configure Ollama's Anthropic-compatible API if not already set
-    if not os.environ.get("ANTHROPIC_BASE_URL"):
-        os.environ["ANTHROPIC_BASE_URL"] = _OLLAMA_BASE
-    if not os.environ.get("ANTHROPIC_AUTH_TOKEN") and not os.environ.get("ANTHROPIC_API_KEY"):
-        os.environ["ANTHROPIC_AUTH_TOKEN"] = "ollama"
-
-    base_url = os.environ["ANTHROPIC_BASE_URL"]
+    # Read env vars set by `ollama launch claude`, fall back to Ollama defaults
+    base_url = os.environ.get("ANTHROPIC_BASE_URL", _OLLAMA_BASE)
     api_key  = os.environ.get("ANTHROPIC_AUTH_TOKEN",
-                os.environ.get("ANTHROPIC_API_KEY", "ollama"))
+               os.environ.get("ANTHROPIC_API_KEY", _OLLAMA_KEY))
 
     client = anthropic.Anthropic(base_url=base_url, api_key=api_key)
     message = client.messages.create(

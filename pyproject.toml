@@ -21,6 +21,7 @@ dependencies = [
     "python-pptx>=0.6",
     "flask>=3.0",
     "anthropic>=0.40",
+    "psutil>=5.9",
 ]
 
 [project.scripts]

@@ -426,15 +426,53 @@ _OLLAMA_BASE = "http://localhost:11434"
 _OLLAMA_KEY  = "ollama"
 
 
-def _chat(model: str, system: str, user: str) -> str:
-    """Call LLM via Anthropic SDK routed through Ollama's compatible API.
+def _claude_cli_available() -> bool:
+    import shutil
+    return shutil.which("claude") is not None
 
-    Values are passed directly to the client — os.environ is never modified,
-    so this cannot interfere with Claude Code or any other tool in the shell.
+
+def _chat_via_claude_code(model: str, system: str, user: str) -> str:
+    """Use the Claude Code CLI (claude) as the generation backend via Ollama.
+
+    Claude Code is specifically good at generating HTML/JS/CSS — better than
+    calling the Anthropic SDK directly for structured code output.
     """
+    import subprocess
+
+    # Build env: use existing Ollama vars if already set (e.g. by ollama launch claude),
+    # otherwise default to local Ollama. Never mutate os.environ.
+    env = {
+        **os.environ,
+        "ANTHROPIC_BASE_URL":  os.environ.get("ANTHROPIC_BASE_URL",  _OLLAMA_BASE),
+        "ANTHROPIC_AUTH_TOKEN": os.environ.get("ANTHROPIC_AUTH_TOKEN", _OLLAMA_KEY),
+        "ANTHROPIC_API_KEY":   os.environ.get("ANTHROPIC_API_KEY",   _OLLAMA_KEY),
+    }
+
+    # Combine system + user into a single prompt for -p (print) mode
+    full_prompt = f"{system}\n\n---\n\n{user}"
+
+    result = subprocess.run(
+        [
+            "claude",
+            "--model", model,
+            "-p", full_prompt,
+            "--output-format", "text",
+            "--dangerously-skip-permissions",   # non-interactive, no file ops
+        ],
+        capture_output=True, text=True, env=env, timeout=300,
+    )
+
+    if result.returncode != 0:
+        err = (result.stderr or "").strip()
+        raise RuntimeError(f"claude CLI exited {result.returncode}: {err}")
+
+    return result.stdout.strip()
+
+
+def _chat_via_sdk(model: str, system: str, user: str) -> str:
+    """Fallback: call the Anthropic SDK directly against Ollama's API."""
     import anthropic
 
-    # Read env vars set by `ollama launch claude`, fall back to Ollama defaults
     base_url = os.environ.get("ANTHROPIC_BASE_URL", _OLLAMA_BASE)
     api_key  = os.environ.get("ANTHROPIC_AUTH_TOKEN",
                os.environ.get("ANTHROPIC_API_KEY", _OLLAMA_KEY))
@@ -447,6 +485,13 @@ def _chat(model: str, system: str, user: str) -> str:
         messages=[{"role": "user", "content": user}],
     )
     return message.content[0].text
+
+
+def _chat(model: str, system: str, user: str) -> str:
+    """Route to Claude Code CLI if available, otherwise use Anthropic SDK directly."""
+    if _claude_cli_available():
+        return _chat_via_claude_code(model, system, user)
+    return _chat_via_sdk(model, system, user)
 
 
 def _generate_outline(

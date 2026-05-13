@@ -480,7 +480,21 @@ cli.add_command(clean_cmd)
 @click.command("models")
 def models_cmd():
     """List Ollama models on this machine, flagging vision-capable ones."""
-    import ollama
+    import shutil, ollama
+
+    # Show which generation backend will be used
+    if shutil.which("claude"):
+        console.print(
+            "[green]✓ Claude Code CLI detected[/green] — "
+            "Sarathi will use [bold]claude[/bold] via Ollama for generation.\n"
+        )
+    else:
+        console.print(
+            "[yellow]Claude Code CLI not found[/yellow] — "
+            "falling back to Anthropic SDK → Ollama directly.\n"
+            "[dim]Install Claude Code: https://claude.ai/code[/dim]\n"
+        )
+
     try:
         result = ollama.list()
     except Exception as exc:
@@ -500,10 +514,8 @@ def models_cmd():
 
     console.print(table)
     console.print(
-        "\n[dim]Recommended: [bold]kimi-k2.5:cloud[/bold] or [bold]qwen3.5[/bold] "
-        "(via Ollama's Anthropic-compatible API) · "
-        "[bold]llama3.2-vision:11b[/bold] (local image analysis)\n"
-        "Setup: [cyan]ollama launch claude --model kimi-k2.5:cloud[/cyan][/dim]"
+        "[dim]Recommended: [bold]qwen3.5[/bold] (local) · "
+        "[bold]kimi-k2.5:cloud[/bold] or [bold]glm-5:cloud[/bold] (cloud via Ollama)[/dim]"
     )
 
 

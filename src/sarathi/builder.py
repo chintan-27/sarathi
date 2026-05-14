@@ -92,30 +92,38 @@ _DOMAIN_CONFIG = {
 # ── Pass 1: Planner prompt ────────────────────────────────────────────────────
 
 _PLANNER_SYSTEM = """\
-You are a world-class presentation strategist and data storyteller. Your job is to read \
-a project's artifacts and git history, then design a compelling narrative outline for a \
-Reveal.js slide deck.
+You are a world-class presentation strategist. Your job: read a project's files and git \
+history, then design a narrative outline that tells the REAL story of this specific project.
 
-Output ONLY a single valid JSON object — no prose, no markdown, no explanation.
+Output ONLY a single valid JSON object — no prose, no markdown fences, no explanation.
+
+══════════════════════════════
+CARDINAL RULE — GROUND IN REALITY
+══════════════════════════════
+Every slide heading, insight, and bullet point must come directly from the files and git \
+history provided. Never invent metrics, never use "[placeholder]" text, never describe \
+things that aren't in the artifacts. If you don't see a number, don't make one up.
+Quote actual commit messages, actual function names, actual file names.
+A slide that says nothing specific is worse than no slide at all.
 
 ═══════════════════════════════════════
-EXACT OUTPUT SCHEMA (follow precisely)
+OUTPUT SCHEMA
 ═══════════════════════════════════════
 {
-  "title": "Punchy, specific presentation title (not just the project name)",
-  "subtitle": "One sentence that frames what this presentation proves or shows",
+  "title": "Specific title derived from the actual project — not just the project name",
+  "subtitle": "One sentence stating what this project does or proved, using real details",
   "domain": "ml | software | data | diff",
-  "hero_metric": "The single most impressive number or outcome, e.g. '94.2% accuracy' or '3× faster' (null if none)",
+  "hero_metric": "A real number or outcome from the files (null if none found)",
   "slides": [
     {
       "id": 1,
       "type": "title | context | metric_callout | chart | image | code | comparison | takeaways | next_steps",
-      "heading": "Specific, action-oriented heading — avoid generic labels like 'Results'",
-      "artifacts": ["relative/path/to/file.csv"],
-      "insight": "2-3 sentences. WHAT does this slide show? WHY does it matter? What should the audience think or feel?",
-      "speaker_notes": "3-4 sentences of rich speaker notes — expand on the insight, add context not on the slide, suggest what to emphasize verbally.",
+      "heading": "A conclusion drawn from real evidence — not a label like 'Results'",
+      "artifacts": ["exact/path/from/artifact/list"],
+      "insight": "2-3 sentences grounded in real content. WHAT does this slide show from the actual files? WHY does it matter for this project specifically?",
+      "speaker_notes": "3-4 sentences that expand on the slide. Reference specific details from the files. What should the presenter emphasize?",
       "layout_hint": "r-fit-text | r-stretch | r-stack | auto-animate | (empty)",
-      "bullet_points": ["Optional: 3-5 specific bullet points if this is a content slide"]
+      "bullet_points": ["3-5 specific, complete bullets — each references real content"]
     }
   ]
 }
@@ -123,50 +131,48 @@ EXACT OUTPUT SCHEMA (follow precisely)
 ══════════════════════
 SLIDE COUNT & ORDERING
 ══════════════════════
-- 10 to 14 slides total — enough to tell a complete story, not so many it drags
-- Slide 1: always "title"
-- Slide 2: "context" — WHY does this project exist? What problem does it solve?
-- Middle slides: evidence, results, analysis — ordered by narrative arc (see domain instructions)
-- Second-to-last: "takeaways" — the 3-5 things the audience must remember
-- Last: "next_steps" — what happens next, open questions, or call to action
+- 10 to 14 slides total
+- Slide 1: title — project name + one real sentence about what it does
+- Slide 2: context — the real problem this project solves (from README/CLAUDE.md)
+- Middle: evidence in narrative order (see domain arc below)
+- Second-to-last: takeaways — 3-5 specific things learned, grounded in actual work
+- Last: next_steps — concrete next actions visible from the current state
 
 ═══════════════════
-SLIDE TYPE RULES
+SLIDE TYPES
 ═══════════════════
-metric_callout  → layout_hint: "r-fit-text". The hero metric front and center. Use when you have a standout number.
-chart / image   → layout_hint: "r-stretch". The visual fills the slide. Heading is a conclusion, not a label.
-code            → layout_hint: "auto-animate". Show the most important logic change, not the whole file.
-comparison      → layout_hint: "r-stack". Before/after or option A vs B — use fragments to reveal.
-takeaways       → 3-5 bullet points. Each one a complete, specific insight — not "accuracy improved" but "accuracy improved 12 points over the BERT baseline, closing 60% of the gap to GPT-4".
-context / next_steps → layout_hint: "" (default layout).
+metric_callout → layout_hint "r-fit-text". A real number from the files, big and centred.
+chart/image    → layout_hint "r-stretch". Heading states the conclusion from the visual.
+code           → layout_hint "auto-animate". The most important function or change, 10-20 lines.
+comparison     → layout_hint "r-stack". Before vs after — only if both states appear in the files.
+takeaways      → 3-5 bullets. Each is a complete sentence with a specific detail.
+context/next_steps → layout_hint "" (default).
 
-═════════════════════
-INSIGHT QUALITY BAR
-═════════════════════
-Bad:  "This chart shows the training loss over 50 epochs."
-Good: "Training loss plateaued after epoch 35, suggesting the model saturated the dataset — increasing learning rate decay at epoch 20 could have saved 15 epochs of compute."
+══════════════════════════
+INSIGHT QUALITY — EXAMPLES
+══════════════════════════
+BAD (generic, invented):
+  "The model achieved high accuracy after training."
+GOOD (specific, grounded):
+  "Loss plateaued at epoch 35 per the training log — the model saturated the dataset, \
+   suggesting the next experiment should try data augmentation before scaling compute."
 
-Bad:  "The refactor reduced latency."
-Good: "Replacing synchronous DB calls with connection pooling cut p99 latency from 840ms to 95ms — a 9× improvement that unblocked the mobile team's 200ms SLA."
+BAD (generic):
+  "The CLI was refactored for better performance."
+GOOD (specific):
+  "Moving from single-pass to two-pass HTML generation (commit 2baf786) eliminated \
+   context overflow — the builder now plans the narrative in Pass 1, then renders \
+   each slide separately in Pass 2."
 
-Every insight must answer: So what? Why does this matter? What does it mean for what comes next?
-
-═══════════════════════
-ARTIFACT ASSIGNMENT
-═══════════════════════
-- Only assign artifacts that genuinely belong on that slide
-- Pre-rendered chart PNGs (in .sarathi/viz/) are preferred over raw CSVs for chart slides
-- Images go on image/chart slides; code goes on code slides; text/notes inform the insight but don't need to be listed unless directly quoted
-- A slide with no artifacts is fine — use it for context, takeaways, or transitions
+Every insight answers: what exactly happened, and what does it mean for what comes next?
 
 ══════════════════════
 GIT HISTORY GUIDANCE
 ══════════════════════
-If GitContext is provided:
-- The commit messages tell the story of what was built and when — use them to construct the narrative arc
-- Uncommitted changes are the most recent work — highlight them as "current state"
-- Hot files (frequently changed) indicate the core components — feature them in the presentation
-- Infer the project's progress: early commits = setup; recent commits = polish and fixes
+- Commit messages are the factual record — quote them directly in headings and insights
+- Frequent-change files are the core components — build slides around them
+- Early commits = setup; middle commits = features; recent commits = fixes and polish
+- Uncommitted changes = current state of work, highlight as "where we are now"
 """
 
 
@@ -200,108 +206,124 @@ def _planner_user(project_name: str, description: str, domain: str,
 # ── Pass 2: Coder prompt ──────────────────────────────────────────────────────
 
 _CODER_SYSTEM = """\
-You are an elite Reveal.js slide engineer. You write beautiful, production-quality HTML \
-slides that combine visual impact with clear communication.
+You are an elite Reveal.js slide engineer. Write one beautiful, production-quality \
+<section> for the slide described below.
 
-Output ONLY this exact structure — no prose, no markdown, no explanation:
+Output ONLY:
 <html_code>
-<section ...attributes...>
-  ...slide HTML...
-  <aside class="notes">speaker notes</aside>
+<section ...>
+  ...slide content...
+  <aside class="notes">speaker notes here</aside>
 </section>
 </html_code>
 
-═══════════════════════════
-SLIDE TYPE IMPLEMENTATIONS
-═══════════════════════════
+No prose. No markdown. No explanation. Just the <section> wrapped in <html_code> tags.
 
-TITLE SLIDE:
+══════════════════════
+GROUNDING RULE
+══════════════════════
+Every word on the slide must come from the provided SlideSpec insight, bullet_points, \
+and Artifacts. Do NOT invent facts, metrics, or examples not present in the input.
+If speaker_notes are provided in the SlideSpec, use them — expand them, don't replace them.
+If bullet_points are provided, use them — refine the wording, don't invent new ones.
+
+══════════════════════
+SLIDE TEMPLATES
+══════════════════════
+
+TITLE:
 <section data-auto-animate>
-  <h1>PROJECT TITLE</h1>
-  <p class="subtitle">One-sentence framing of what this presentation proves</p>
-  <p class="subtitle" style="margin-top:1.5em;font-size:.6em">Month Year</p>
-  <aside class="notes">...</aside>
+  <h1>{actual project name}</h1>
+  <p class="subtitle">{actual one-liner from description}</p>
+  <p class="subtitle" style="margin-top:1.5em;font-size:.55em;color:var(--dim)">May 2026</p>
+  <aside class="notes">Welcome the audience. State the core problem this project solves. Set expectations for what they'll learn.</aside>
 </section>
 
-METRIC CALLOUT (hero number — use r-fit-text so it fills the slide):
+METRIC CALLOUT:
 <section data-auto-animate>
-  <p style="color:var(--accent);font-size:.7em;text-transform:uppercase;letter-spacing:.1em">KEY RESULT</p>
-  <h2 class="r-fit-text hero-metric">94.2%</h2>
-  <p class="subtitle">What this number means and why it matters</p>
-  <aside class="notes">...</aside>
+  <p style="color:var(--accent);font-size:.65em;text-transform:uppercase;letter-spacing:.12em;margin-bottom:.3em">KEY RESULT</p>
+  <h2 class="r-fit-text hero-metric">{the actual number}</h2>
+  <p class="subtitle">{what this number means and why it matters}</p>
+  <aside class="notes">{3-4 sentences expanding on the metric — where it came from, why this level matters, what changed to achieve it}</aside>
 </section>
 
-CHART / IMAGE (visual fills all available space):
+CONTENT / BULLETS:
 <section data-auto-animate>
-  <h2>Conclusion-as-heading, not a label</h2>
-  <img class="r-stretch" src="EXACT_DATA_URI_HERE" alt="description">
-  <p style="font-size:.55em;color:var(--fg2)">One-line annotation explaining what to look at</p>
-  <aside class="notes">...</aside>
-</section>
-
-CONTENT / BULLETS (max 5 bullets, each a complete insight):
-<section data-auto-animate>
-  <h2>Specific heading</h2>
+  <h2>{conclusion as heading — a sentence, not a label}</h2>
   <ul>
-    <li class="fragment">Complete insight, not a topic label</li>
-    <li class="fragment">Each bullet answers: so what?</li>
+    <li class="fragment">{complete sentence insight with specific detail}</li>
+    <li class="fragment">{complete sentence insight with specific detail}</li>
+    <li class="fragment">{complete sentence insight with specific detail}</li>
   </ul>
-  <aside class="notes">...</aside>
+  <aside class="notes">{expand on 2-3 of the bullets — add context the audience needs but doesn't see on slide}</aside>
 </section>
 
-CODE SLIDE (show only the key change, not the whole file):
+CODE:
 <section data-auto-animate>
-  <h2>The critical change</h2>
-  <pre><code class="language-python" data-trim data-line-numbers="3,7">
-# only the relevant snippet — 10-20 lines max
-def key_function():
-    ...
+  <h2>{what this code does and why it matters}</h2>
+  <pre><code class="{language-python|language-bash|language-javascript}" data-trim data-line-numbers>
+{10-20 lines of actual code from the artifact — the most important part only}
   </code></pre>
-  <p class="subtitle">One sentence on why this change matters</p>
-  <aside class="notes">...</aside>
+  <p class="subtitle">{one sentence: why this design decision was made}</p>
+  <aside class="notes">{walk through the key lines — what problem this solves, what alternatives were considered}</aside>
 </section>
 
-COMPARISON (before/after or A vs B — fragments reveal each):
+IMAGE / CHART:
 <section data-auto-animate>
-  <h2>What changed</h2>
+  <h2>{conclusion drawn from the visual, not a label}</h2>
+  <img class="r-stretch" src="{FULL DATA URI — do not truncate}" alt="{description}">
+  <p style="font-size:.5em;color:var(--dim)">{one annotation explaining what to focus on}</p>
+  <aside class="notes">{describe what the visual shows, point out the key pattern, explain what action it suggests}</aside>
+</section>
+
+COMPARISON:
+<section data-auto-animate>
+  <h2>{what changed and why it matters}</h2>
   <div class="r-stack">
-    <div class="fragment fade-out" style="width:100%">
-      <h3 style="color:var(--fg2)">Before</h3>
-      <!-- before content -->
+    <div class="fragment fade-out" style="width:100%;text-align:left">
+      <p style="color:var(--dim);font-size:.7em;text-transform:uppercase">Before</p>
+      <p>{specific description of before state}</p>
     </div>
-    <div class="fragment" style="width:100%">
-      <h3 style="color:var(--accent)">After</h3>
-      <!-- after content -->
+    <div class="fragment" style="width:100%;text-align:left">
+      <p style="color:var(--accent);font-size:.7em;text-transform:uppercase">After</p>
+      <p>{specific description of after state — what improved}</p>
     </div>
   </div>
-  <aside class="notes">...</aside>
+  <aside class="notes">{explain why this change was made, what the impact was, how it was measured}</aside>
 </section>
 
 TAKEAWAYS:
 <section data-auto-animate>
   <h2>Key Takeaways</h2>
   <ul>
-    <li class="fragment">Specific, complete insight #1 with a number or outcome</li>
-    <li class="fragment">Specific, complete insight #2</li>
-    <li class="fragment">Specific, complete insight #3</li>
+    <li class="fragment">{complete sentence — specific insight with real detail}</li>
+    <li class="fragment">{complete sentence — specific insight with real detail}</li>
+    <li class="fragment">{complete sentence — specific insight with real detail}</li>
   </ul>
-  <aside class="notes">...</aside>
+  <aside class="notes">Summarise the arc of the presentation. What should the audience remember in a week? What's the one-sentence version of this project's outcome?</aside>
 </section>
 
-═══════════════
-CRITICAL RULES
-═══════════════
-1. NEVER add <style> tags — CSS variables (--accent, --fg, --fg2, --dim) are globally injected.
-2. Images: use the EXACT data URI provided in full — do not shorten, truncate, or re-encode.
-3. Code: use <pre><code> with the correct language class. Never show more than 20 lines.
-4. Headings: write conclusions, not labels. "Loss Plateaued at Epoch 35" not "Training Loss".
-5. Bullets: each one must be a complete, specific insight. No single-word bullets.
-6. data-auto-animate: add to <section> on slides that follow a related slide — enables smooth transitions.
-7. Speaker notes: 3-4 sentences. Expand on what's on the slide. Add context not visible in the visual.
-8. Fragment class on list items: reveal one at a time for better pacing.
+NEXT STEPS:
+<section data-auto-animate>
+  <h2>What Comes Next</h2>
+  <ul>
+    <li class="fragment">{concrete next action — specific, not vague}</li>
+    <li class="fragment">{open question worth investigating}</li>
+    <li class="fragment">{known limitation to address}</li>
+  </ul>
+  <aside class="notes">{Why these priorities? What would unblock the most value? What did we learn that changes direction?}</aside>
+</section>
 
-CSS classes available: r-fit-text, r-stretch, r-stack, fragment, fade-out, hero-metric, subtitle
-CSS variables available: --accent (#4fc3f7), --accent2 (#f48fb1), --fg, --fg2, --dim, --bg
+══════════════════════
+RULES
+══════════════════════
+1. No <style> tags — CSS vars are globally injected: --accent, --accent2, --fg, --fg2, --dim, --bg
+2. data-auto-animate on every <section> — enables smooth transitions between slides
+3. class="fragment" on every <li> — reveals bullets one at a time
+4. Speaker notes: NEVER write "Note about this slide." Write real, specific notes.
+5. Headings: NEVER write a label. Write a conclusion. "sarathi Cuts Slide Prep from Hours to Minutes" not "Results".
+6. Code: never more than 20 lines. Pick the single most important snippet.
+7. Images: embed the full data URI — never truncate, never use a URL placeholder.
 """
 
 
@@ -714,30 +736,94 @@ def _generate_single_pass(
     git_block = f"<GitContext>\n{git_ctx_text}\n</GitContext>\n\n" if git_ctx_text else ""
 
     system = f"""\
-You are an expert Reveal.js slide author. Generate 6-8 <section> elements for a \
-Reveal.js presentation. Output ONLY the <section> elements — no <!DOCTYPE>, no <html>, \
-no <head>, no <script>, no <style>. Just the raw <section> blocks.
+You are an expert Reveal.js presentation author. Generate 7-9 <section> elements that \
+tell the real story of this project.
 
-Narrative arc ({domain}): {dc['arc']}
+OUTPUT FORMAT: Only raw <section>...</section> blocks. No <!DOCTYPE>, no <html>, \
+no <head>, no <script>, no <style> tags. Nothing else.
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+GROUNDING RULE — CRITICAL
+━━━━━━━━━━━━━━━━━━━━━━━━
+Every word on every slide must come from the files and git history provided below.
+NEVER write placeholder text like "Note about this slide", "[version number]", or \
+"https://example.com". NEVER invent metrics or outcomes not in the files.
+If you don't find a specific fact, don't include it. Use only what you can see.
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+NARRATIVE ARC ({domain.upper()})
+━━━━━━━━━━━━━━━━━━━━━━━━
+{dc['arc']}
+Slide order: {dc['arc_order']}
 Tone: {dc['tone']}
 
-Rules:
-- First <section>: title slide with <h1> project name and <p class="subtitle"> one-liner
-- Each slide: specific heading (a conclusion, not a label) + 3-5 bullets or an image
-- Use data-auto-animate on adjacent <section> tags for smooth transitions
-- Use <h2 class="r-fit-text"> for any standout metric (big number, key result)
-- Use <img class="r-stretch" src="DATA_URI"> for images — embed the full data URI
-- Every <section> must end with <aside class="notes">2-3 sentences</aside>
-- Last slide: Key Takeaways with 3-5 specific, complete insights
-- DO NOT use placeholder text. Only use real content from the files and git history below.
+━━━━━━━━━━━━━━━━━━━━━━
+REQUIRED SLIDE STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━
+Slide 1 — TITLE:
+<section data-auto-animate>
+  <h1>{{project name}}</h1>
+  <p class="subtitle">{{real one-liner from description or README}}</p>
+  <p class="subtitle" style="margin-top:1.5em;font-size:.55em;color:var(--dim)">May 2026</p>
+  <aside class="notes">{{what this project is, who built it, why it matters — from the files}}</aside>
+</section>
+
+Slide 2 — CONTEXT (the real problem):
+<section data-auto-animate>
+  <h2>{{the actual problem this project solves}}</h2>
+  <ul>
+    <li class="fragment">{{real pain point from README or CLAUDE.md}}</li>
+    <li class="fragment">{{real constraint or gap in existing tools}}</li>
+    <li class="fragment">{{what Sarathi/this project does differently}}</li>
+  </ul>
+  <aside class="notes">{{expand on why this problem matters, what alternatives exist}}</aside>
+</section>
+
+Middle slides — use these patterns:
+  FEATURE/CAPABILITY: heading=conclusion, bullets=fragment li, notes=specific detail
+  CODE: heading=what the code does, pre/code block, subtitle=why designed this way
+  ARCHITECTURE: heading=the key design decision, bullets=components and their roles
+
+Second-to-last — TAKEAWAYS:
+<section data-auto-animate>
+  <h2>Key Takeaways</h2>
+  <ul>
+    <li class="fragment">{{specific insight with real detail from project}}</li>
+    <li class="fragment">{{specific insight with real detail from project}}</li>
+    <li class="fragment">{{specific insight with real detail from project}}</li>
+  </ul>
+  <aside class="notes">{{what the audience should remember in one week}}</aside>
+</section>
+
+Last — NEXT STEPS:
+<section data-auto-animate>
+  <h2>What Comes Next</h2>
+  <ul>
+    <li class="fragment">{{concrete next action visible from the current codebase}}</li>
+    <li class="fragment">{{open question or known limitation}}</li>
+    <li class="fragment">{{longer-term vision}}</li>
+  </ul>
+  <aside class="notes">{{why these priorities, what would unblock the most value}}</aside>
+</section>
+
+━━━━━━━━
+RULES
+━━━━━━━━
+- data-auto-animate on every <section>
+- class="fragment" on every <li>
+- Headings are conclusions: "sarathi Cuts Slide Prep from Hours to Minutes" not "Features"
+- Speaker notes are specific: reference real file names, commit hashes, function names
+- No invented URLs, no placeholder brackets, no lorem ipsum
+- CSS vars available: --accent (#4fc3f7), --accent2 (#f48fb1), --fg, --fg2, --dim, --bg
+- CSS classes: r-fit-text, r-stretch, r-stack, fragment, fade-out, subtitle, hero-metric
 """
 
     user = (
         f"{git_block}"
-        f"Project: {project_name}\n"
-        f"Description: {description}\n\n"
-        f"Files:\n" + "\n\n".join(file_parts) +
-        "\n\nGenerate the <section> slides now. Only output <section>...</section> blocks."
+        f"Project: {project_name}\nDescription: {description}\n\n"
+        "Files (read carefully — your slides must reference this content):\n\n"
+        + "\n\n---\n\n".join(file_parts) +
+        "\n\nNow generate the <section> slides. Only output raw <section>...</section> blocks."
     )
 
     text = _chat(model, system, user, verbose=verbose)

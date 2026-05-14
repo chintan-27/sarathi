@@ -493,7 +493,14 @@ def generate(
     git_ctx_text: str | None = None,
     verbose: bool = False,
     fast: bool = False,
+    planner_model: str | None = None,
+    coder_model: str | None = None,
+    vision_model: str | None = None,
 ) -> None:
+    # Role-specific model routing — fall back to `model` if roles not set
+    _planner = planner_model or model
+    _coder   = coder_model   or model
+    _vision  = vision_model  or model
     from rich.console import Console
     from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
     from . import viz as viz_module
@@ -530,15 +537,14 @@ def generate(
     console.print(f"[dim][sarathi][/dim] Domain detected: [cyan]{domain}[/cyan]")
 
     if fast:
-        # ── Single-pass: one LLM call generates the entire HTML presentation ──
         console.print(
-            f"[dim][sarathi][/dim] Fast mode — single-pass generation "
-            f"([bold]{model}[/bold])..."
+            f"[dim][sarathi][/dim] Fast mode — single-pass "
+            f"([bold]{_coder}[/bold])..."
         )
         with Progress(SpinnerColumn(), TextColumn("[dim]generating...[/dim]"),
                       console=console, transient=True):
             html_doc = _generate_single_pass(
-                project_name, description, domain, all_files, model,
+                project_name, description, domain, all_files, _coder,
                 theme, git_ctx_text, verbose=verbose
             )
         output_html.write_text(html_doc, encoding="utf-8")
@@ -550,9 +556,12 @@ def generate(
         console.print(f"[dim][sarathi][/dim] Loading outline from {outline_path.name}...")
         outline = json.loads(outline_path.read_text(encoding="utf-8"))
     else:
-        console.print(f"[dim][sarathi][/dim] Pass 1 — planning narrative outline...")
+        console.print(
+            f"[dim][sarathi][/dim] Pass 1 — planning narrative outline "
+            f"([bold]{_planner}[/bold])..."
+        )
         outline = _generate_outline(
-            project_name, description, domain, all_files, model, git_ctx_text,
+            project_name, description, domain, all_files, _planner, git_ctx_text,
             verbose=verbose,
         )
         n_slides = len(outline.get("slides", []))
@@ -569,21 +578,24 @@ def generate(
     slides = outline.get("slides", [])
     slides_html: list[str] = []
 
+    console.print(
+        f"[dim][sarathi][/dim] Pass 2 — rendering slides ([bold]{_coder}[/bold])"
+    )
     with Progress(
         SpinnerColumn(),
-        TextColumn("[dim][sarathi][/dim] Pass 2 —"),
+        TextColumn("[dim][sarathi][/dim]"),
         TextColumn("[cyan]{task.description}[/cyan]"),
         BarColumn(bar_width=24),
         TaskProgressColumn(),
         console=console,
         transient=False,
     ) as progress:
-        task = progress.add_task("rendering slides", total=len(slides))
+        task = progress.add_task("rendering", total=len(slides))
         for slide in slides:
             heading = slide.get("heading", f"Slide {slide.get('id', '')}")
             progress.update(task, description=f"[bold]{heading[:50]}[/bold]")
             try:
-                html = _render_slide(slide, artifacts_map, model, verbose=verbose)
+                html = _render_slide(slide, artifacts_map, _coder, verbose=verbose)
             except Exception as exc:
                 html = (
                     f"<section><h2>{heading}</h2>"

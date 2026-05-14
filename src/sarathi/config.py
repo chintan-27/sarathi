@@ -7,9 +7,12 @@ _GLOBAL_CONFIG_DIR = Path.home() / ".config" / "sarathi"
 _SARATHI_DIR = ".sarathi"
 
 DEFAULTS: dict = {
-    "model": "qwen3.5",
-    "theme": "dark-gradient",
-    "domain": "auto",
+    "model":          "qwen2.5-coder:3b",  # fallback if roles not set
+    "planner_model":  "gemma3:4b",          # Pass 1: narrative outline
+    "coder_model":    "qwen2.5-coder:3b",   # Pass 2: HTML/JS rendering
+    "vision_model":   "gemma3:4b",          # image description (multimodal)
+    "theme":          "dark-gradient",
+    "domain":         "auto",
 }
 
 

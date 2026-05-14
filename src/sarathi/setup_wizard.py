@@ -323,12 +323,12 @@ def run() -> None:
     console.print("[bold]Available models for your hardware:[/bold]")
     model_table = Table(box=box.SIMPLE, show_header=True, padding=(0, 2),
                         header_style="bold cyan")
-    model_table.add_column("#",       width=3,  style="dim")
-    model_table.add_column("Model",   style="bold")
-    model_table.add_column("RAM",     width=8)
-    model_table.add_column("Vision",  width=7)
-    model_table.add_column("Status",  width=10)
-    model_table.add_column("Notes",   style="dim")
+    model_table.add_column("#",      width=3,  style="dim")
+    model_table.add_column("Model",  style="bold")
+    model_table.add_column("RAM",    width=8)
+    model_table.add_column("Vision", width=7)
+    model_table.add_column("Status", width=10)
+    model_table.add_column("Notes",  style="dim")
 
     for i, (name, display, needed, vision, note) in enumerate(recommended, 1):
         is_cloud  = ":cloud" in name
@@ -340,75 +340,57 @@ def run() -> None:
         model_table.add_row(str(i), display, ram_str, vis_str, status, note)
 
     console.print(model_table)
-
     if others:
-        console.print(f"[dim]  {len(others)} model(s) need more RAM than available.[/dim]")
+        console.print(f"[dim]  {len(others)} model(s) need more RAM.[/dim]")
     console.print()
 
-    # Find best already-available model as the smart default
-    default_idx = "1"
-    for i, (name, _, _, _, _) in enumerate(recommended, 1):
+    # ── Role assignment ────────────────────────────────────────────────────────
+    console.print(Panel(
+        "[bold]Sarathi uses three specialized model roles:[/bold]\n\n"
+        "  [cyan]Planner[/cyan]   — narrative outline, reasoning  "
+        "[dim](recommended: gemma3:4b)[/dim]\n"
+        "  [cyan]Coder[/cyan]     — HTML/JS slide rendering        "
+        "[dim](recommended: qwen2.5-coder:3b)[/dim]\n"
+        "  [cyan]Vision[/cyan]    — image/chart interpretation     "
+        "[dim](recommended: gemma3:4b — multimodal)[/dim]\n\n"
+        "[dim]Enter a number from the table above or type a model name directly.[/dim]",
+        border_style="cyan", title="Model Roles"
+    ))
+
+    def _pick_model(role: str, default_name: str, default_display: str) -> str:
+        """Interactively pick and optionally pull a model for a role."""
+        choice = console.input(
+            f"  [bold]{role}[/bold] model "
+            f"[dim](Enter for [cyan]{default_name}[/cyan])[/dim]: "
+        ).strip()
+
+        if not choice:
+            name = default_name
+        elif choice.isdigit():
+            idx = int(choice) - 1
+            name = recommended[idx][0] if 0 <= idx < len(recommended) else default_name
+        else:
+            name = choice  # typed directly
+
         base = name.split(":")[0]
-        if base in already_pulled or ":cloud" in name:
-            default_idx = str(i)
-            break
-
-    choice_str = console.input(
-        f"[bold]Pick model(s) to use/pull[/bold] "
-        f"(comma-separated numbers, Enter for [cyan]#{default_idx}[/cyan]): "
-    ).strip() or default_idx
-
-    chosen_indices = []
-    for part in choice_str.split(","):
-        try:
-            idx = int(part.strip()) - 1
-            if 0 <= idx < len(recommended):
-                chosen_indices.append(idx)
-        except ValueError:
-            pass
-
-    if not chosen_indices:
-        console.print("[yellow]No valid selection — skipping.[/yellow]")
-        chosen_models = []
-    else:
-        chosen_models = [recommended[i] for i in chosen_indices]
-
-    # Pull each chosen model (skip if already available)
-    primary_model = None
-    for name, display, needed, vision, note in chosen_models:
-        base_name = name.split(":")[0]
-        is_cloud  = ":cloud" in name
-        is_ready  = base_name in already_pulled
+        is_ready = base in already_pulled or ":cloud" in name
+        bin_ = ollama_bin or _ollama_bin()
 
         if is_ready:
-            console.print(f"  [green]✓ {display} already pulled — ready.[/green]")
-        elif is_cloud:
-            console.print(
-                f"  [green]✓ {display}[/green] [dim]— cloud model, no download needed.[/dim]"
-            )
+            console.print(f"    [green]✓ {name} already ready.[/green]")
+        elif bin_:
+            if Confirm.ask(f"    Pull [bold]{name}[/bold] now?", default=True):
+                subprocess.run([bin_, "pull", name])
         else:
-            bin_ = ollama_bin or _ollama_bin()
-            if not bin_:
-                console.print(
-                    "  [red]✗ ollama not in PATH.[/red] "
-                    "Open a new terminal and run [cyan]sarathi setup[/cyan] again, "
-                    "or pull manually: [cyan]ollama pull " + name + "[/cyan]"
-                )
-            else:
-                try:
-                    result = subprocess.run([bin_, "pull", name])
-                    if result.returncode == 0:
-                        console.print(f"  [green]✓ {display} ready.[/green]")
-                    else:
-                        console.print(f"  [red]✗ Pull failed for {name}.[/red]")
-                except FileNotFoundError:
-                    console.print(
-                        f"  [red]✗ Could not run {bin_}.[/red] "
-                        f"Try: [cyan]ollama pull {name}[/cyan] in a new terminal."
-                    )
+            console.print(f"    [yellow]Run: ollama pull {name}[/yellow]")
 
-        if primary_model is None:
-            primary_model = name
+        return name
+
+    planner_model = _pick_model("Planner", "gemma3:4b",       "Gemma 3 4B")
+    coder_model   = _pick_model("Coder",   "qwen2.5-coder:3b","Qwen 2.5 Coder 3B")
+    vision_model  = _pick_model("Vision",  "gemma3:4b",       "Gemma 3 4B")
+
+    primary_model = coder_model  # used as fallback `model` key
 
     # ── Vision model check ────────────────────────────────────────────────────
     _VISION_KEYWORDS = {"vision", "vl", "llava", "minicpm", "gemma3"}
@@ -439,25 +421,30 @@ def run() -> None:
         )
     console.print()
 
-    # ── Save primary model to global config ────────────────────────────────────
-    if primary_model:
-        from . import config as cfg
-        global_cfg_dir = Path.home() / ".config" / "sarathi"
-        global_cfg_dir.mkdir(parents=True, exist_ok=True)
-        global_cfg = global_cfg_dir / "config.json"
-        import json
-        existing = {}
-        if global_cfg.exists():
-            try:
-                existing = json.loads(global_cfg.read_text())
-            except Exception:
-                pass
-        existing["model"] = primary_model
-        global_cfg.write_text(json.dumps(existing, indent=2), encoding="utf-8")
-        console.print(
-            f"\n[green]✓ Default model set to [bold]{primary_model}[/bold] "
-            f"(saved to ~/.config/sarathi/config.json)[/green]"
-        )
+    # ── Save model roles to global config ────────────────────────────────────
+    import json
+    global_cfg_dir = Path.home() / ".config" / "sarathi"
+    global_cfg_dir.mkdir(parents=True, exist_ok=True)
+    global_cfg = global_cfg_dir / "config.json"
+    existing = {}
+    if global_cfg.exists():
+        try:
+            existing = json.loads(global_cfg.read_text())
+        except Exception:
+            pass
+    existing.update({
+        "model":         primary_model,
+        "planner_model": planner_model,
+        "coder_model":   coder_model,
+        "vision_model":  vision_model,
+    })
+    global_cfg.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+    console.print(
+        f"\n[green]✓ Model roles saved to ~/.config/sarathi/config.json[/green]\n"
+        f"  Planner : [cyan]{planner_model}[/cyan]\n"
+        f"  Coder   : [cyan]{coder_model}[/cyan]\n"
+        f"  Vision  : [cyan]{vision_model}[/cyan]"
+    )
 
     # ── How Sarathi uses Ollama ────────────────────────────────────────────────
     console.print()

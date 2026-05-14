@@ -149,9 +149,12 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
     trk.init_tracker(project_dir)
     ptf.register_project(project_dir)
 
-    project_cfg = cfg.load_project_config(project_dir)
+    project_cfg    = cfg.load_project_config(project_dir)
     effective_model = model or meta.get("model") or project_cfg["model"]
-    theme = project_cfg.get("theme", "dark-gradient")
+    planner_model  = project_cfg.get("planner_model")
+    coder_model    = project_cfg.get("coder_model")
+    vision_model   = project_cfg.get("vision_model")
+    theme          = project_cfg.get("theme", "dark-gradient")
     output_dir = project_dir / "output"
     output_dir.mkdir(exist_ok=True)
 
@@ -207,6 +210,9 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
                 git_ctx_text=git_ctx_text,
                 verbose=verbose,
                 fast=fast,
+                planner_model=planner_model,
+                coder_model=coder_model,
+                vision_model=vision_model,
             )
             trk.log_event(project_dir, "generated",
                           html=str(html_out.relative_to(project_dir)),

@@ -633,6 +633,14 @@ def run() -> None:
             ("Vision",  vision_model),
             ("Fast",    fast_model),
         ]
+        # Token estimates per role for a 10-slide presentation
+        _ROLE_TOKENS = {
+            "Planner": 400,            # outline JSON: ~400 tokens
+            "Coder":   500 * 10,       # HTML per slide × 10 slides
+            "Vision":  200,            # image descriptions (optional)
+            "Fast":    1500,           # single-pass: full HTML in one call
+        }
+
         for role, m in role_rows:
             r = results.get(m, {})
             if not r.get("ok"):
@@ -644,20 +652,17 @@ def run() -> None:
             lat = r["latency"]
 
             if ":cloud" in m:
-                tps_str  = "[green]cloud[/green]"
-                lat_str  = "[dim]—[/dim]"
-                est_str  = "[green]~1-3 min[/green]"
+                tps_str = "[green]cloud[/green]"
+                lat_str = "[dim]—[/dim]"
+                est_str = "[green]~1-3 min[/green]"
             else:
-                color    = "green" if tps >= 5 else "yellow" if tps >= 2 else "red"
-                tps_str  = f"[{color}]{tps:.1f} tok/s[/{color}]"
-                lat_str  = f"[dim]{lat:.1f}s[/dim]"
-                # Rough estimate: planner ~300 tok, coder ~500 tok × N slides
-                if role == "Planner":
-                    est_min = 300 / max(tps, 0.1) / 60
-                else:
-                    est_min = (500 * 8) / max(tps, 0.1) / 60
-                color2   = "green" if est_min < 10 else "yellow" if est_min < 30 else "red"
-                est_str  = f"[{color2}]~{est_min:.0f} min[/{color2}]"
+                color   = "green" if tps >= 5 else "yellow" if tps >= 2 else "red"
+                tps_str = f"[{color}]{tps:.1f} tok/s[/{color}]"
+                lat_str = f"[dim]{lat:.1f}s[/dim]"
+                tokens  = _ROLE_TOKENS.get(role, 500)
+                est_min = tokens / max(tps, 0.1) / 60
+                color2  = "green" if est_min < 5 else "yellow" if est_min < 20 else "red"
+                est_str = f"[{color2}]~{est_min:.0f} min[/{color2}]"
 
             bench_table.add_row(role, m, tps_str, lat_str, est_str)
 

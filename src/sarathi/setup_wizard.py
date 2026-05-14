@@ -293,17 +293,28 @@ def run() -> None:
     # ── Model selection ────────────────────────────────────────────────────────
     recommended, others = recommend_models(hw)
 
-    # Detect already-pulled models
+    # Detect already-pulled models — check disk first, fall back to ollama list
     already_pulled: set[str] = set()
-    if installed and running:
+
+    # Primary: scan ~/.ollama/models/manifests/ — works even if server is down
+    # Structure: manifests/<registry>/<namespace>/<model>/<tag>  (tag is a file)
+    manifests_dir = Path.home() / ".ollama" / "models" / "manifests"
+    if manifests_dir.exists():
+        for manifest_file in manifests_dir.rglob("*"):
+            if manifest_file.is_file():
+                # model name is the parent dir of the tag file
+                already_pulled.add(manifest_file.parent.name.lower())
+
+    # Fallback: ollama list (requires server running)
+    if not already_pulled and installed and running:
         try:
             raw = subprocess.run(
                 [ollama_bin, "list"], capture_output=True, text=True, timeout=5
             ).stdout
-            for line in raw.splitlines()[1:]:  # skip header
+            for line in raw.splitlines()[1:]:
                 parts = line.split()
                 if parts:
-                    already_pulled.add(parts[0].split(":")[0])  # strip tag
+                    already_pulled.add(parts[0].split(":")[0].lower())
         except Exception:
             pass
 

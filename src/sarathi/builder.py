@@ -501,11 +501,54 @@ def generate(
     _planner = planner_model or model
     _coder   = coder_model   or model
     _vision  = vision_model  or model
+
     from rich.console import Console
     from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+    from rich.table import Table
+    from rich import box as rbox
     from . import viz as viz_module
+    import time
 
     console = Console()
+
+    # ── Preload models into RAM ───────────────────────────────────────────────
+    unique_models = list(dict.fromkeys([_planner, _coder] +
+                                       ([_vision] if _vision != _planner else [])))
+    console.print()
+    console.print("[bold][sarathi] Loading models into RAM...[/bold]")
+
+    load_table = Table(box=rbox.SIMPLE, show_header=True, padding=(0, 2),
+                       header_style="bold cyan")
+    load_table.add_column("Role")
+    load_table.add_column("Model", style="bold")
+    load_table.add_column("Status", justify="right")
+    load_table.add_column("Load time", justify="right")
+
+    role_map = {_planner: "Planner", _coder: "Coder"}
+    if _vision and _vision != _planner:
+        role_map[_vision] = "Vision"
+
+    for m in unique_models:
+        role = role_map.get(m, "Model")
+        console.print(f"  [dim]Loading {m}...[/dim]", end="\r")
+        t0 = time.perf_counter()
+        try:
+            import ollama as _ollama
+            # Warmup request — loads model, keep alive for the duration of generation
+            _ollama.generate(model=m, prompt="ready", options={"num_predict": 1})
+            load_s = time.perf_counter() - t0
+            load_table.add_row(
+                role, m,
+                "[green]✓ loaded[/green]",
+                f"[dim]{load_s:.1f}s[/dim]"
+            )
+        except Exception as exc:
+            load_s = time.perf_counter() - t0
+            load_table.add_row(role, m, "[red]✗ error[/red]", f"[dim]{str(exc)[:30]}[/dim]")
+
+    console.print()
+    console.print(load_table)
+    console.print()
 
     # Pre-render CSVs to chart images
     csv_files = [f for f in files if f.type == "data" and f.filename.endswith(".csv")]

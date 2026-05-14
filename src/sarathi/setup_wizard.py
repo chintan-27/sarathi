@@ -17,43 +17,62 @@ console = Console()
 
 # ── Shared benchmark function ─────────────────────────────────────────────────
 
-def benchmark_model(name: str) -> dict:
-    """Run a speed test on a single model.
+def _unload_all() -> None:
+    """Unload every model currently loaded in Ollama RAM before benchmarking."""
+    import ollama as _ollama
+    try:
+        running = _ollama.ps()
+        for m in getattr(running, "models", []):
+            try:
+                model_name = getattr(m, "model", None) or getattr(m, "name", None)
+                if model_name:
+                    _ollama.generate(model=model_name, prompt="", keep_alive=0)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
-    Uses ollama.generate() which returns exact eval_count and eval_duration,
-    separating model load time from actual generation speed.
+
+def benchmark_model(name: str) -> dict:
+    """Unload all models, then cold-start benchmark the given model.
+
+    Reports:
+      - load_s:      time to load model into RAM (cold start)
+      - tps:         pure generation speed after load (tok/s)
+      - eval_tokens: number of tokens generated
     """
     import ollama as _ollama
 
-    _WARMUP  = "Hi"
-    _PROMPT  = "Write the numbers 1 through 50, one per line."
+    _PROMPT = "Write the numbers 1 through 50, one per line. Only numbers."
 
     try:
-        # Warmup: loads the model into RAM without counting that time
-        _ollama.generate(model=name, prompt=_WARMUP, options={"num_predict": 4})
+        # Clear RAM so this model loads fresh — gives accurate load_duration
+        _unload_all()
 
-        # Actual benchmark: Ollama reports eval_count (tokens) and eval_duration (ns)
-        resp = _ollama.generate(model=name, prompt=_PROMPT,
-                                options={"num_predict": 128})
+        resp = _ollama.generate(
+            model=name,
+            prompt=_PROMPT,
+            options={"num_predict": 100},
+            keep_alive=0,   # unload immediately after — don't hog RAM
+        )
 
         eval_count    = resp.get("eval_count", 0)
-        eval_duration = resp.get("eval_duration", 0)   # nanoseconds
-        load_duration = resp.get("load_duration", 0)   # nanoseconds (should be ~0 after warmup)
+        eval_duration = resp.get("eval_duration", 0)   # ns — pure generation
+        load_duration = resp.get("load_duration", 0)   # ns — cold load into RAM
         total_ns      = resp.get("total_duration", 0)
 
         if eval_count and eval_duration:
             tps = eval_count / (eval_duration / 1e9)
         else:
-            # Fallback: count words in response
             text = resp.get("response", "")
             tps  = len(text.split()) / max(total_ns / 1e9, 0.001)
 
         return {
-            "tps":          tps,
-            "latency":      total_ns / 1e9,
-            "load_s":       load_duration / 1e9,
-            "eval_tokens":  eval_count,
-            "ok":           True,
+            "tps":         tps,
+            "latency":     total_ns / 1e9,
+            "load_s":      load_duration / 1e9,
+            "eval_tokens": eval_count,
+            "ok":          True,
         }
     except Exception as e:
         return {"tps": 0, "latency": 0, "ok": False, "error": str(e)}

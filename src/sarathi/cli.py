@@ -485,22 +485,11 @@ cli.add_command(clean_cmd)
 # ── models ────────────────────────────────────────────────────────────────────
 
 @click.command("models")
-def models_cmd():
+@click.option("--benchmark", "-b", is_flag=True,
+              help="Run a quick speed test on each pulled model (tok/s).")
+def models_cmd(benchmark):
     """List Ollama models on this machine, flagging vision-capable ones."""
-    import shutil, ollama
-
-    # Show which generation backend will be used
-    if shutil.which("claude"):
-        console.print(
-            "[green]✓ Claude Code CLI detected[/green] — "
-            "Sarathi will use [bold]claude[/bold] via Ollama for generation.\n"
-        )
-    else:
-        console.print(
-            "[yellow]Claude Code CLI not found[/yellow] — "
-            "falling back to Anthropic SDK → Ollama directly.\n"
-            "[dim]Install Claude Code: https://claude.ai/code[/dim]\n"
-        )
+    import shutil, ollama, time, anthropic
 
     try:
         result = ollama.list()
@@ -510,16 +499,43 @@ def models_cmd():
 
     table = Table(show_header=True, header_style="bold cyan")
     table.add_column("Model")
-    table.add_column("Size")
-    table.add_column("Capability")
+    table.add_column("Size", justify="right")
+    table.add_column("Vision", justify="center")
+    if benchmark:
+        table.add_column("Speed", justify="right")
+        table.add_column("Latency", justify="right")
 
     for m in result.models:
-        name = m.model
-        size_gb = f"{m.size / 1e9:.1f} GB" if hasattr(m, "size") and m.size else "—"
-        cap = "[bold magenta][vision][/bold magenta]" if _is_vision(name) else ""
-        table.add_row(name, size_gb, cap)
+        name     = m.model
+        size_gb  = f"{m.size / 1e9:.1f} GB" if hasattr(m, "size") and m.size else "—"
+        cap      = "[magenta]vision[/magenta]" if _is_vision(name) else "[dim]—[/dim]"
+        row      = [name, size_gb, cap]
+
+        if benchmark:
+            try:
+                console.print(f"[dim]  Benchmarking {name}...[/dim]", end="\r")
+                _prompt = "Count from 1 to 20, one number per line."
+                base_url = "http://localhost:11434"
+                api_key  = "ollama"
+                client   = anthropic.Anthropic(base_url=base_url, api_key=api_key)
+                t0       = time.perf_counter()
+                msg      = client.messages.create(
+                    model=name, max_tokens=128,
+                    messages=[{"role": "user", "content": _prompt}],
+                )
+                elapsed  = time.perf_counter() - t0
+                tokens   = msg.usage.output_tokens if hasattr(msg, "usage") else 0
+                tps      = f"{tokens / elapsed:.0f} tok/s" if elapsed > 0 else "—"
+                lat      = f"{elapsed:.1f}s"
+                row     += [f"[green]{tps}[/green]", f"[dim]{lat}[/dim]"]
+            except Exception as e:
+                row += [f"[red]error[/red]", "[dim]—[/dim]"]
+
+        table.add_row(*row)
 
     console.print(table)
+    if benchmark:
+        console.print("[dim]Speed measured on a single short prompt — real generation will vary.[/dim]")
     console.print(
         "[dim]Recommended: [bold]qwen3.5[/bold] (local) · "
         "[bold]kimi-k2.5:cloud[/bold] or [bold]glm-5:cloud[/bold] (cloud via Ollama)[/dim]"

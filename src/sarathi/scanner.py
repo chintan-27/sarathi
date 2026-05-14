@@ -9,7 +9,7 @@ from pathlib import Path
 
 from PIL import Image
 
-SKIP_DIRS = {"output", ".git", "__pycache__", ".sarathi"}
+SKIP_DIRS = {"output", ".git", "__pycache__", ".sarathi", "research", "node_modules", ".venv", "venv"}
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 SVG_EXTS = {".svg"}
 DATA_EXTS = {".csv", ".json", ".jsonl", ".tsv"}

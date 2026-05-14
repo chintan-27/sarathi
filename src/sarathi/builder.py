@@ -1003,70 +1003,88 @@ def _chat_via_sdk(model: str, system: str, user: str, verbose: bool = False) -> 
 
 def _chat_via_ollama(model: str, system: str, user: str,
                      verbose: bool = False) -> str:
-    """Stream generation via Ollama's native Python SDK — reliable, real tok/s."""
+    """Stream generation via Ollama's native Python SDK."""
     import ollama as _ollama
-    import time, sys
+    import time
+    from rich.console import Console as _C
+    from rich.progress import (
+        Progress, BarColumn, TextColumn, SpinnerColumn, TimeElapsedColumn
+    )
+
+    _con = _C()
 
     if verbose:
-        from rich.console import Console as _C
         from rich.rule import Rule
-        c = _C()
-        c.print(Rule("[bold cyan]PROMPT → SYSTEM[/bold cyan]", style="cyan"))
-        c.print(system[:3000] + ("..." if len(system) > 3000 else ""))
-        c.print(Rule("[bold cyan]PROMPT → USER[/bold cyan]", style="cyan"))
-        c.print(user[:3000] + ("..." if len(user) > 3000 else ""))
+        _con.print(Rule("[bold cyan]PROMPT → SYSTEM[/bold cyan]", style="cyan"))
+        _con.print(system[:3000] + ("..." if len(system) > 3000 else ""))
+        _con.print(Rule("[bold cyan]PROMPT → USER[/bold cyan]", style="cyan"))
+        _con.print(user[:3000] + ("..." if len(user) > 3000 else ""))
 
     messages = [
-        {"role": "system",    "content": system},
-        {"role": "user",      "content": user},
+        {"role": "system", "content": system},
+        {"role": "user",   "content": user},
     ]
 
     chunks: list[str] = []
     out_tokens = 0
-    est_in     = (len(system) + len(user)) // 4
-    t0         = time.perf_counter()
-    BAR_MAX    = 40
+    eval_tokens = 0          # Ollama's reported token count (accurate)
+    est_in      = (len(system) + len(user)) // 4
+    t0          = time.perf_counter()
 
-    def _show(done: bool = False) -> None:
-        elapsed = time.perf_counter() - t0
-        tps     = out_tokens / max(elapsed, 0.5)
-        elapsed_str = f"{elapsed:.0f}s" if elapsed < 60 else f"{elapsed/60:.1f}m"
-        filled  = min(out_tokens // 15, BAR_MAX)
-        bar     = "█" * filled + "░" * (BAR_MAX - filled)
-        sym     = "✓" if done else "⟳"
-        line    = (
-            f"  {sym} [{bar}]  "
-            f"in ~{est_in:,}  out {out_tokens}  "
-            f"  {tps:.1f} tok/s  {elapsed_str}"
+    with Progress(
+        SpinnerColumn(),
+        BarColumn(bar_width=36),
+        TextColumn("[dim]{task.description}[/dim]"),
+        TimeElapsedColumn(),
+        console=_con,
+        transient=True,
+    ) as progress:
+        task = progress.add_task(
+            f"in ~{est_in:,}  out 0  ·  — tok/s",
+            total=None,
         )
-        sys.stdout.write(f"\r{line:<110}")
-        sys.stdout.flush()
 
-    _show()
+        for chunk in _ollama.chat(model=model, messages=messages, stream=True):
+            text = chunk.get("message", {}).get("content", "")
+            if text:
+                chunks.append(text)
+                out_tokens += 1
 
-    for chunk in _ollama.chat(model=model, messages=messages, stream=True):
-        text = chunk.get("message", {}).get("content", "")
-        if text:
-            chunks.append(text)
-            out_tokens += 1
-            if out_tokens % 3 == 0:
-                _show()
+            # Ollama reports accurate counts in the final chunk
+            if chunk.get("done"):
+                eval_tokens = chunk.get("eval_count", out_tokens)
+                eval_dur    = chunk.get("eval_duration", 0)   # ns
+                tps         = eval_tokens / (eval_dur / 1e9) if eval_dur else 0
+            else:
+                elapsed = time.perf_counter() - t0
+                tps     = out_tokens / max(elapsed, 0.5)
 
-    sys.stdout.write("\r" + " " * 112 + "\r")
-    sys.stdout.flush()
-    _show(done=True)
-    print()   # newline after final summary
+            progress.update(
+                task,
+                description=(
+                    f"in ~{est_in:,}  out {out_tokens}  ·  {tps:.1f} tok/s"
+                ),
+            )
+
+    # Final accurate numbers from Ollama
+    final_tokens = eval_tokens or out_tokens
+    elapsed      = time.perf_counter() - t0
+    final_tps    = eval_tokens / (elapsed) if eval_tokens else out_tokens / max(elapsed, 1)
+    _con.print(
+        f"  [green]✓[/green]  "
+        f"in [dim]~{est_in:,}[/dim]  ·  "
+        f"out [bold]{final_tokens}[/bold]  ·  "
+        f"[bold]{final_tps:.1f} tok/s[/bold]  ·  {elapsed:.0f}s"
+    )
 
     result = "".join(chunks)
 
     if verbose:
-        from rich.console import Console as _C
         from rich.rule import Rule
         from rich.panel import Panel
-        c = _C()
-        c.print(Rule("[bold green]RESPONSE[/bold green]", style="green"))
-        c.print(Panel(result[:4000] + ("..." if len(result) > 4000 else ""),
-                      border_style="green", expand=False))
+        _con.print(Rule("[bold green]RESPONSE[/bold green]", style="green"))
+        _con.print(Panel(result[:4000] + ("..." if len(result) > 4000 else ""),
+                         border_style="green", expand=False))
 
     return result
 

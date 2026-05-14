@@ -763,48 +763,130 @@ def _claude_cli_available() -> bool:
     return shutil.which("claude") is not None
 
 
-def _chat_via_claude_code(model: str, system: str, user: str) -> str:
-    """Use the Claude Code CLI (claude) as the generation backend via Ollama.
+def _chat_via_claude_code(model: str, system: str, user: str,
+                          verbose: bool = False) -> str:
+    """Stream generation through Claude Code CLI → Ollama.
 
-    Claude Code is specifically good at generating HTML/JS/CSS — better than
-    calling the Anthropic SDK directly for structured code output.
+    Uses --output-format stream-json so we can parse events for live progress.
+    ANTHROPIC_API_KEY must be empty; ANTHROPIC_AUTH_TOKEN=ollama routes to Ollama.
     """
-    import subprocess
+    import subprocess, json, sys, time
 
-    # Build env: use existing Ollama vars if already set (e.g. by ollama launch claude),
-    # otherwise default to local Ollama. Never mutate os.environ.
     env = {
         **os.environ,
         "ANTHROPIC_BASE_URL":   os.environ.get("ANTHROPIC_BASE_URL",   _OLLAMA_BASE),
         "ANTHROPIC_AUTH_TOKEN": os.environ.get("ANTHROPIC_AUTH_TOKEN", _OLLAMA_KEY),
-        "ANTHROPIC_API_KEY":    "",   # must be empty so claude uses ANTHROPIC_AUTH_TOKEN
+        "ANTHROPIC_API_KEY":    "",   # empty → claude uses ANTHROPIC_AUTH_TOKEN
     }
 
-    # Combine system + user into a single prompt for -p (print) mode
-    full_prompt = f"{system}\n\n---\n\n{user}"
+    cmd = [
+        "claude",
+        "--model", model,
+        "--print",
+        "--output-format", "stream-json",
+        "--dangerously-skip-permissions",
+        "--bare",
+        "--system-prompt", system,
+        "-p", user,
+    ]
 
-    result = subprocess.run(
-        [
-            "claude",
-            "--model", model,
-            "--print",
-            "--output-format", "text",
-            "--dangerously-skip-permissions",
-            "--bare",           # skip hooks, CLAUDE.md discovery, keychain — pure API call
-            "--system-prompt", system,
-            "-p", user,         # user message only (system passed separately)
-        ],
-        capture_output=True, text=True, env=env, timeout=300,
+    chunks: list[str] = []
+    out_tokens = 0
+    in_tokens  = 0
+    t0         = time.perf_counter()
+    est_in     = (len(system) + len(user)) // 4
+
+    def _show() -> None:
+        elapsed = time.perf_counter() - t0
+        tps     = out_tokens / max(elapsed, 0.5)
+        in_str  = f"{in_tokens:,}" if in_tokens else f"~{est_in:,}"
+        elapsed_str = f"{elapsed:.0f}s" if elapsed < 60 else f"{elapsed/60:.1f}m"
+        bar  = "█" * min(out_tokens // 20, 30) + "░" * max(0, 30 - out_tokens // 20)
+        line = (
+            f"  [{bar}]  prompt {in_str} → out {out_tokens}"
+            f"  {tps:.1f} tok/s  {elapsed_str}"
+        )
+        sys.stdout.write(f"\r{line:<100}")
+        sys.stdout.flush()
+
+    proc = subprocess.Popen(
+        cmd, env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, bufsize=1,
     )
 
-    if result.returncode != 0:
-        err = (result.stderr or result.stdout or "no output").strip()[:400]
-        raise RuntimeError(f"claude CLI exited {result.returncode}: {err}")
+    try:
+        for raw_line in proc.stdout:
+            raw_line = raw_line.strip()
+            if not raw_line:
+                continue
 
-    output = result.stdout.strip()
+            if verbose:
+                print(f"\n[stream-json] {raw_line[:120]}")
+
+            try:
+                event = json.loads(raw_line)
+            except json.JSONDecodeError:
+                # Plain text fallback — claude printed raw output
+                chunks.append(raw_line)
+                out_tokens += 1
+                _show()
+                continue
+
+            etype = event.get("type", "")
+
+            if etype == "system":
+                # First event — may contain model/session info
+                pass
+            elif etype == "assistant":
+                # Content block from assistant
+                content = event.get("message", {}).get("content", [])
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        text = block.get("text", "")
+                        chunks.append(text)
+                        out_tokens += max(len(text.split()), 1)
+                        _show()
+            elif etype == "content_block_delta":
+                delta = event.get("delta", {})
+                text  = delta.get("text", "")
+                if text:
+                    chunks.append(text)
+                    out_tokens += 1
+                    if out_tokens % 5 == 0:
+                        _show()
+            elif etype == "message_start":
+                usage = event.get("message", {}).get("usage", {})
+                in_tokens = usage.get("input_tokens", 0)
+                _show()
+            elif etype == "result":
+                # Claude Code final result event — contains full text
+                result_text = event.get("result", "")
+                if result_text and not chunks:
+                    chunks.append(result_text)
+                    out_tokens = len(result_text.split())
+                _show()
+
+        proc.wait(timeout=10)
+    except Exception as exc:
+        proc.kill()
+        raise RuntimeError(f"claude stream error: {exc}") from exc
+
+    # Final summary line
+    elapsed = time.perf_counter() - t0
+    tps     = out_tokens / max(elapsed, 0.001)
+    in_str  = f"{in_tokens:,}" if in_tokens else f"~{est_in:,}"
+    sys.stdout.write("\r" + " " * 100 + "\r")
+    sys.stdout.flush()
+    print(f"  ✓  in: {in_str}  ·  out: {out_tokens}  ·  {tps:.1f} tok/s  ·  {elapsed:.0f}s")
+
+    if proc.returncode not in (0, None):
+        err = proc.stderr.read(400) if proc.stderr else ""
+        raise RuntimeError(f"claude exited {proc.returncode}: {err}")
+
+    output = "".join(chunks).strip()
     if not output:
         raise RuntimeError("claude CLI returned empty output")
-
     return output
 
 
@@ -906,6 +988,14 @@ def _chat_via_sdk(model: str, system: str, user: str, verbose: bool = False) -> 
 
 
 def _chat(model: str, system: str, user: str, verbose: bool = False) -> str:
+    if _claude_cli_available():
+        try:
+            return _chat_via_claude_code(model, system, user, verbose=verbose)
+        except RuntimeError as exc:
+            # Fall back to SDK if claude CLI fails (e.g. model name not accepted)
+            Console().print(
+                f"[yellow][sarathi] claude CLI failed ({exc}), falling back to SDK[/yellow]"
+            )
     return _chat_via_sdk(model, system, user, verbose=verbose)
 
 

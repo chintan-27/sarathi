@@ -507,8 +507,9 @@ def models_cmd(benchmark):
     table.add_column("Size", justify="right")
     table.add_column("Vision", justify="center")
     if benchmark:
-        table.add_column("Speed", justify="right")
-        table.add_column("Latency", justify="right")
+        table.add_column("Gen speed",  justify="right")
+        table.add_column("Load time",  justify="right")
+        table.add_column("Tokens",     justify="right")
 
     for m in result.models:
         name     = m.model
@@ -521,21 +522,28 @@ def models_cmd(benchmark):
                 from .setup_wizard import benchmark_model
                 console.print(f"[dim]  Benchmarking {name}...[/dim]", end="\r")
                 r       = benchmark_model(name)
-                tps_val = r["tps"]
-                elapsed = r["latency"]
-                color   = "green" if tps_val >= 5 else "yellow" if tps_val >= 2 else "red"
-                tps     = f"[{color}]{tps_val:.1f} tok/s[/{color}]"
-                lat     = f"[dim]{elapsed:.1f}s[/dim]"
-                row    += [tps, lat]
+                if not r["ok"]:
+                    row += [f"[red]{str(r.get('error',''))[:20]}[/red]", "—", "—"]
+                else:
+                    tps_val = r["tps"]
+                    load_s  = r.get("load_s", 0)
+                    tokens  = r.get("eval_tokens", 0)
+                    color   = "green" if tps_val >= 5 else "yellow" if tps_val >= 2 else "red"
+                    row += [
+                        f"[{color}]{tps_val:.1f} tok/s[/{color}]",
+                        f"[dim]{load_s:.1f}s[/dim]",
+                        f"[dim]{tokens}[/dim]",
+                    ]
             except Exception as e:
-                row += [f"[red]error[/red]", "[dim]—[/dim]"]
+                row += [f"[red]error[/red]", "—", "—"]
 
         table.add_row(*row)
 
     console.print(table)
     if benchmark:
         console.print(
-            "\n[dim]Speed is words/s on a short prompt — actual generation varies with context size.\n"
+            "\n[dim]Gen speed = tokens/s after model is loaded (warmup run done first).\n"
+            "Load time = cold-start time (first request only, then cached).\n"
             "  ≥ 10 tok/s → fast  (~2-5 min per presentation)\n"
             "  2–10 tok/s → usable (~10-30 min per presentation)\n"
             "  < 2 tok/s  → slow  (consider a cloud model instead)[/dim]"

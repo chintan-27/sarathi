@@ -18,25 +18,43 @@ console = Console()
 # ── Shared benchmark function ─────────────────────────────────────────────────
 
 def benchmark_model(name: str) -> dict:
-    """Run a quick speed test on a single model. Returns {tps, latency, ok}."""
-    import time
-    import anthropic
+    """Run a speed test on a single model.
 
-    _PROMPT = "Count from 1 to 30, one number per line. Only numbers, nothing else."
+    Uses ollama.generate() which returns exact eval_count and eval_duration,
+    separating model load time from actual generation speed.
+    """
+    import ollama as _ollama
+
+    _WARMUP  = "Hi"
+    _PROMPT  = "Write the numbers 1 through 50, one per line."
+
     try:
-        client  = anthropic.Anthropic(
-            base_url="http://localhost:11434", api_key="ollama"
-        )
-        t0      = time.perf_counter()
-        msg     = client.messages.create(
-            model=name, max_tokens=256,
-            messages=[{"role": "user", "content": _PROMPT}],
-        )
-        elapsed = time.perf_counter() - t0
-        text    = msg.content[0].text if msg.content else ""
-        tokens  = len(text.split())
-        tps     = tokens / elapsed if elapsed > 0 else 0
-        return {"tps": tps, "latency": elapsed, "ok": True, "tokens": tokens}
+        # Warmup: loads the model into RAM without counting that time
+        _ollama.generate(model=name, prompt=_WARMUP, options={"num_predict": 4})
+
+        # Actual benchmark: Ollama reports eval_count (tokens) and eval_duration (ns)
+        resp = _ollama.generate(model=name, prompt=_PROMPT,
+                                options={"num_predict": 128})
+
+        eval_count    = resp.get("eval_count", 0)
+        eval_duration = resp.get("eval_duration", 0)   # nanoseconds
+        load_duration = resp.get("load_duration", 0)   # nanoseconds (should be ~0 after warmup)
+        total_ns      = resp.get("total_duration", 0)
+
+        if eval_count and eval_duration:
+            tps = eval_count / (eval_duration / 1e9)
+        else:
+            # Fallback: count words in response
+            text = resp.get("response", "")
+            tps  = len(text.split()) / max(total_ns / 1e9, 0.001)
+
+        return {
+            "tps":          tps,
+            "latency":      total_ns / 1e9,
+            "load_s":       load_duration / 1e9,
+            "eval_tokens":  eval_count,
+            "ok":           True,
+        }
     except Exception as e:
         return {"tps": 0, "latency": 0, "ok": False, "error": str(e)}
 

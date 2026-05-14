@@ -321,17 +321,22 @@ def run() -> None:
     # ── Model selection ────────────────────────────────────────────────────────
     recommended, others = recommend_models(hw)
 
-    # Detect already-pulled models — check disk first, fall back to ollama list
-    already_pulled: set[str] = set()
-
-    # Primary: scan ~/.ollama/models/manifests/ — works even if server is down
+    # Detect already-pulled models — store both full "model:tag" and base names
     # Structure: manifests/<registry>/<namespace>/<model>/<tag>  (tag is a file)
+    already_pulled: set[str] = set()   # full "model:tag" names
+    pulled_bases:   set[str] = set()   # base model names (any tag)
+    pulled_versions: dict[str, list[str]] = {}  # base → [available tags]
+
     manifests_dir = Path.home() / ".ollama" / "models" / "manifests"
     if manifests_dir.exists():
         for manifest_file in manifests_dir.rglob("*"):
             if manifest_file.is_file():
-                # model name is the parent dir of the tag file
-                already_pulled.add(manifest_file.parent.name.lower())
+                model_name = manifest_file.parent.name.lower()
+                tag        = manifest_file.name.lower()
+                full_name  = f"{model_name}:{tag}"
+                already_pulled.add(full_name)
+                pulled_bases.add(model_name)
+                pulled_versions.setdefault(model_name, []).append(tag)
 
     # Fallback: ollama list (requires server running)
     if not already_pulled and installed and running:
@@ -342,7 +347,13 @@ def run() -> None:
             for line in raw.splitlines()[1:]:
                 parts = line.split()
                 if parts:
-                    already_pulled.add(parts[0].split(":")[0].lower())
+                    full = parts[0].lower()
+                    base = full.split(":")[0]
+                    already_pulled.add(full)
+                    pulled_bases.add(base)
+                    pulled_versions.setdefault(base, []).append(
+                        full.split(":")[-1] if ":" in full else "latest"
+                    )
         except Exception:
             pass
 
@@ -357,12 +368,22 @@ def run() -> None:
     model_table.add_column("Notes",  style="dim")
 
     for i, (name, display, needed, vision, note) in enumerate(recommended, 1):
-        is_cloud  = ":cloud" in name
-        base_name = name.split(":")[0]
-        pulled    = base_name in already_pulled or is_cloud
-        ram_str   = "[green]cloud[/green]" if is_cloud else f"{needed} GB"
-        vis_str   = "[cyan]✓[/cyan]" if vision else "[dim]—[/dim]"
-        status    = "[green]ready[/green]" if pulled else "[dim]not pulled[/dim]"
+        is_cloud   = ":cloud" in name
+        base_name  = name.split(":")[0].lower()
+        tag        = name.split(":")[-1].lower() if ":" in name else "latest"
+        full_lower = f"{base_name}:{tag}"
+        # Exact match first, then base match (different tag available)
+        if is_cloud:
+            status = "[green]cloud[/green]"
+        elif full_lower in already_pulled:
+            status = "[green]ready[/green]"
+        elif base_name in pulled_bases:
+            avail = pulled_versions.get(base_name, [])
+            status = f"[yellow]{base_name}:{avail[0]}[/yellow]"
+        else:
+            status = "[dim]not pulled[/dim]"
+        ram_str = "[green]cloud[/green]" if is_cloud else f"{needed} GB"
+        vis_str = "[cyan]✓[/cyan]" if vision else "[dim]—[/dim]"
         model_table.add_row(str(i), display, ram_str, vis_str, status, note)
 
     console.print(model_table)
@@ -396,17 +417,32 @@ def run() -> None:
             idx = int(choice) - 1
             name = recommended[idx][0] if 0 <= idx < len(recommended) else default_name
         else:
-            name = choice  # typed directly
+            name = choice
 
-        base = name.split(":")[0]
-        is_ready = base in already_pulled or ":cloud" in name
-        bin_ = ollama_bin or _ollama_bin()
+        base      = name.split(":")[0].lower()
+        tag       = name.split(":")[-1].lower() if ":" in name else "latest"
+        full      = f"{base}:{tag}"
+        is_cloud  = ":cloud" in name
+        exact_ok  = full in already_pulled or is_cloud
+        base_ok   = base in pulled_bases
+        bin_      = ollama_bin or _ollama_bin()
 
-        if is_ready:
-            console.print(f"    [green]✓ {name} already ready.[/green]")
+        if exact_ok:
+            console.print(f"    [green]✓ {name} ready.[/green]")
+        elif base_ok:
+            # Different tag available — use it instead of pulling again
+            avail_tag  = pulled_versions[base][0]
+            actual_name = f"{base}:{avail_tag}"
+            console.print(
+                f"    [yellow]⚠ {name} not pulled, but [bold]{actual_name}[/bold] "
+                f"is available — using that.[/yellow]"
+            )
+            name = actual_name
         elif bin_:
             if Confirm.ask(f"    Pull [bold]{name}[/bold] now?", default=True):
-                subprocess.run([bin_, "pull", name])
+                result = subprocess.run([bin_, "pull", name])
+                if result.returncode == 0:
+                    console.print(f"    [green]✓ {name} ready.[/green]")
         else:
             console.print(f"    [yellow]Run: ollama pull {name}[/yellow]")
 
@@ -422,7 +458,7 @@ def run() -> None:
     _VISION_KEYWORDS = {"vision", "vl", "llava", "minicpm", "gemma3"}
     has_vision = any(
         any(kw in m.lower() for kw in _VISION_KEYWORDS)
-        for m in already_pulled
+        for m in pulled_bases
     )
 
     if not has_vision:
@@ -439,7 +475,7 @@ def run() -> None:
             already_pulled.add("gemma3")
             console.print("  [green]✓ gemma3:12b ready — vision support enabled.[/green]")
     else:
-        vision_models = [m for m in already_pulled
+        vision_models = [m for m in pulled_bases
                          if any(kw in m.lower() for kw in _VISION_KEYWORDS)]
         console.print(
             f"  [green]✓ Vision model available:[/green] "
@@ -503,7 +539,8 @@ def run() -> None:
         for role, m in role_rows:
             r = results.get(m, {})
             if not r.get("ok"):
-                bench_table.add_row(role, m, "[red]error[/red]", "—", "—")
+                err = str(r.get("error", ""))[:40]
+                bench_table.add_row(role, m, f"[red]error[/red]", f"[dim]{err}[/dim]", "—")
                 continue
 
             tps = r["tps"]

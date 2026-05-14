@@ -23,16 +23,18 @@ MODELS = [
      "Fast cloud model, great structured output"),
     ("glm-5:cloud",       "GLM-5 Cloud",           2,   False,
      "Strong reasoning, good for data analysis decks"),
-    ("qwen3.5",           "Qwen 3.5 (local 8B)",   6,   False,
-     "Best local 8B — fast HTML generation"),
+    ("qwen3:1.7b",        "Qwen 3 1.7B (fast)",    2,   False,
+     "Tiny & fast on CPU — use with --fast flag (~5 min/presentation)"),
+    ("qwen2.5:3b",        "Qwen 2.5 3B (fast)",    3,   False,
+     "Good quality/speed balance on CPU — recommended for local-only"),
+    ("qwen3.5",           "Qwen 3.5 8B",           6,   False,
+     "Best local 8B quality — slow on CPU (~30+ min/presentation)"),
     ("gemma3:12b",        "Gemma 3 12B",           9,   True,
      "Multimodal, 128K context — great for image-heavy projects"),
     ("llama3.2-vision",   "Llama 3.2 Vision 11B",  8,   True,
      "Best local vision model for reading charts/images"),
-    ("phi4",              "Phi-4 14B",             10,  False,
-     "Strong reasoning — good for ML experiment decks"),
     ("qwen2.5-coder:7b",  "Qwen 2.5 Coder 7B",     5,  False,
-     "Reliable HTML/code generation, very fast on CPU"),
+     "Reliable HTML/code generation on CPU"),
 ]
 
 

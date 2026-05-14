@@ -492,6 +492,7 @@ def generate(
     domain_override: str | None = None,
     git_ctx_text: str | None = None,
     verbose: bool = False,
+    fast: bool = False,
 ) -> None:
     from rich.console import Console
     from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
@@ -506,6 +507,20 @@ def generate(
     viz_files = viz_module.process(files, project_dir)
     all_files = files + viz_files
 
+    # Context trimming — fast mode or large file sets get aggressive limits
+    if fast:
+        all_files = _trim_context(all_files, max_chars=6000, max_files=8)
+        console.print(
+            f"[dim][sarathi][/dim] Fast mode — using {len(all_files)} file(s) "
+            f"(trimmed for speed)"
+        )
+    elif len(all_files) > 12 or sum(len(f.content) for f in all_files) > 20000:
+        all_files = _trim_context(all_files, max_chars=15000, max_files=12)
+        console.print(
+            f"[dim][sarathi][/dim] Large project — trimmed to {len(all_files)} "
+            f"most relevant file(s)"
+        )
+
     # Build artifacts lookup
     artifacts_map: dict[str, ResultFile] = {rf.path: rf for rf in all_files}
     for rf in all_files:
@@ -514,7 +529,23 @@ def generate(
     domain = domain_override or detect_domain(description, files)
     console.print(f"[dim][sarathi][/dim] Domain detected: [cyan]{domain}[/cyan]")
 
-    # Pass 1: generate or load outline
+    if fast:
+        # ── Single-pass: one LLM call generates the entire HTML presentation ──
+        console.print(
+            f"[dim][sarathi][/dim] Fast mode — single-pass generation "
+            f"([bold]{model}[/bold])..."
+        )
+        with Progress(SpinnerColumn(), TextColumn("[dim]generating...[/dim]"),
+                      console=console, transient=True):
+            html_doc = _generate_single_pass(
+                project_name, description, domain, all_files, model,
+                theme, git_ctx_text, verbose=verbose
+            )
+        output_html.write_text(html_doc, encoding="utf-8")
+        console.print(f"[green][sarathi][/green] Presentation ready (single-pass).")
+        return
+
+    # ── Two-pass: outline → slide-by-slide (better quality) ──────────────────
     if outline_path and outline_path.exists():
         console.print(f"[dim][sarathi][/dim] Loading outline from {outline_path.name}...")
         outline = json.loads(outline_path.read_text(encoding="utf-8"))
@@ -535,7 +566,6 @@ def generate(
             outline_path.write_text(json.dumps(outline, indent=2), encoding="utf-8")
             return
 
-    # Pass 2: render each slide
     slides = outline.get("slides", [])
     slides_html: list[str] = []
 
@@ -562,9 +592,9 @@ def generate(
             slides_html.append(html)
             progress.advance(task)
 
-    console.print(
-        f"[green][sarathi][/green] All {len(slides_html)} slides rendered."
-    )
+    console.print(f"[green][sarathi][/green] All {len(slides_html)} slides rendered.")
+
+    html_doc = _assemble(outline.get("title", project_name), slides_html, theme)
 
     html_doc = _assemble(outline.get("title", project_name), slides_html, theme)
     output_html.write_text(html_doc, encoding="utf-8")
@@ -578,6 +608,91 @@ def generate(
         pptx_exporter.to_pptx(outline, artifacts_map, pptx_out)
     except Exception:
         pass  # PPTX is best-effort; HTML is primary
+
+
+def _trim_context(files: list[ResultFile], max_chars: int, max_files: int) -> list[ResultFile]:
+    """Keep priority files first, then trim by char budget and file count."""
+    # Priority order: images > data > text/priority docs > code
+    priority = {"image": 0, "svg": 1, "data": 2, "text": 3, "code": 4}
+    sorted_files = sorted(files, key=lambda f: priority.get(f.type, 5))
+
+    kept, total_chars = [], 0
+    for rf in sorted_files:
+        if len(kept) >= max_files:
+            break
+        content_len = len(rf.content)
+        if total_chars + content_len > max_chars and kept:
+            # Include a truncated version of important text files
+            if rf.type in ("text", "code") and len(kept) < max_files:
+                remaining = max_chars - total_chars
+                if remaining > 200:
+                    truncated = ResultFile(
+                        path=rf.path, filename=rf.filename, type=rf.type,
+                        content=rf.content[:remaining] + "\n...(trimmed)"
+                    )
+                    kept.append(truncated)
+            break
+        kept.append(rf)
+        total_chars += content_len
+    return kept
+
+
+def _generate_single_pass(
+    project_name: str,
+    description: str,
+    domain: str,
+    files: list[ResultFile],
+    model: str,
+    theme: str,
+    git_ctx_text: str | None,
+    verbose: bool = False,
+) -> str:
+    """Generate a complete Reveal.js HTML presentation in one LLM call."""
+    dc = _DOMAIN_CONFIG.get(domain, _DOMAIN_CONFIG["ml"])
+    theme_css = _THEMES.get(theme, _THEMES["dark-gradient"])
+
+    file_parts: list[str] = []
+    for rf in files:
+        if rf.type in ("image", "svg"):
+            file_parts.append(f"[IMAGE: {rf.filename}]\n<img src=\"{rf.content}\">")
+        elif rf.type == "data":
+            file_parts.append(f"[DATA: {rf.filename}]\n{rf.content[:800]}")
+        else:
+            file_parts.append(f"[{rf.type.upper()}: {rf.filename}]\n{rf.content[:600]}")
+
+    git_block = f"\n<GitContext>\n{git_ctx_text}\n</GitContext>" if git_ctx_text else ""
+
+    system = f"""\
+You are an expert Reveal.js presentation engineer. Generate a complete, self-contained \
+HTML presentation. Output ONLY the full HTML document — nothing else.
+
+Theme CSS to inject inline:
+{theme_css}
+
+Narrative arc for {domain}: {dc['arc']}
+Tone: {dc['tone']}
+Use 6-8 slides. Use data-auto-animate, r-fit-text for hero metrics, r-stretch for images.
+Each section must have <aside class="notes">.
+"""
+
+    user = (
+        f"Project: {project_name}\nDescription: {description}\n"
+        f"{git_block}\n\nFiles:\n" + "\n\n".join(file_parts) +
+        "\n\nGenerate the complete Reveal.js HTML now."
+    )
+
+    from datetime import date
+    text = _chat(model, system, user, verbose=verbose)
+
+    # Extract HTML
+    start = text.find("<!DOCTYPE")
+    if start == -1:
+        start = text.find("<html")
+    if start != -1:
+        return text[start:]
+
+    # Fallback: wrap whatever came back
+    return _assemble(project_name, [f"<section><p>{text[:500]}</p></section>"], theme)
 
 
 _OLLAMA_BASE = "http://localhost:11434"

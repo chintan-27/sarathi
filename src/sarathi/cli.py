@@ -130,7 +130,7 @@ cli.add_command(arambh_cmd)
 # ── track / yatra ─────────────────────────────────────────────────────────────
 
 def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
-                verbose: bool = False):
+                verbose: bool = False, fast: bool = False):
     project_dir = Path(folder).resolve()
     meta_path = project_dir / "project.json"
 
@@ -206,6 +206,7 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
                 outline_path=outline_path,
                 git_ctx_text=git_ctx_text,
                 verbose=verbose,
+                fast=fast,
             )
             trk.log_event(project_dir, "generated",
                           html=str(html_out.relative_to(project_dir)),
@@ -239,57 +240,55 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
 @click.option("--model", default=None, help="Override the Ollama model.")
 @click.option("--edit-outline", is_flag=True,
               help="Save JSON outline for editing before rendering slides.")
+@click.option("--fast", is_flag=True,
+              help="Single-pass generation — one LLM call, much faster on CPU.")
 @click.option("--verbose", "-v", is_flag=True,
               help="Print every prompt sent to the LLM and its raw response.")
-def track_cmd(folder, once, model, edit_outline, verbose):
-    """Watch a project folder and regenerate on every file change.
-
-    Scans for new results, pre-renders charts, calls the LLM, and writes
-    HTML + PDF + PPTX to output/. Ctrl-C to stop watching.
-    """
-    _track_impl(folder, once, model, edit_outline, verbose=verbose)
+def track_cmd(folder, once, model, edit_outline, fast, verbose):
+    """Watch a project folder and regenerate on every file change."""
+    _track_impl(folder, once, model, edit_outline, verbose=verbose, fast=fast)
 
 
 @click.command("yatra", hidden=True)
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
-@click.option("--once", is_flag=True, help="Generate once and exit.")
-@click.option("--model", default=None, help="Override the Ollama model.")
+@click.option("--once", is_flag=True)
+@click.option("--model", default=None)
 @click.option("--edit-outline", is_flag=True)
+@click.option("--fast", is_flag=True)
 @click.option("--verbose", "-v", is_flag=True)
-def yatra_cmd(folder, once, model, edit_outline, verbose):
+def yatra_cmd(folder, once, model, edit_outline, fast, verbose):
     """Watch a project folder and regenerate on every file change. (yatra = journey)"""
-    _track_impl(folder, once, model, edit_outline, verbose=verbose)
+    _track_impl(folder, once, model, edit_outline, verbose=verbose, fast=fast)
 
 
 cli.add_command(track_cmd)
 cli.add_command(yatra_cmd)
 
 
-# ── make / rachna (legacy one-shot, wraps track --once) ───────────────────────
+# ── make / rachna ─────────────────────────────────────────────────────────────
 
 @click.command("make")
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
-@click.option("--once", is_flag=True, default=True, hidden=True)
 @click.option("--model", default=None, help="Override the Ollama model.")
 @click.option("--edit-outline", is_flag=True)
+@click.option("--fast", is_flag=True,
+              help="Single-pass generation — one LLM call, much faster on CPU.")
 @click.option("--verbose", "-v", is_flag=True,
               help="Print every prompt and raw LLM response.")
-def make_cmd(folder, once, model, edit_outline, verbose):
-    """Generate a presentation once and exit (no watching).
-
-    Use --edit-outline to inspect and edit the narrative plan before slides render.
-    """
-    _track_impl(folder, True, model, edit_outline, verbose=verbose)
+def make_cmd(folder, model, edit_outline, fast, verbose):
+    """Generate a presentation once and exit (no watching)."""
+    _track_impl(folder, True, model, edit_outline, verbose=verbose, fast=fast)
 
 
 @click.command("bana", hidden=True)
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
-@click.option("--model", default=None, help="Override the Ollama model.")
+@click.option("--model", default=None)
 @click.option("--edit-outline", is_flag=True)
+@click.option("--fast", is_flag=True)
 @click.option("--verbose", "-v", is_flag=True)
-def bana_cmd(folder, model, edit_outline, verbose):
+def bana_cmd(folder, model, edit_outline, fast, verbose):
     """Generate a presentation once and exit. (bana = build)"""
-    _track_impl(folder, True, model, edit_outline, verbose=verbose)
+    _track_impl(folder, True, model, edit_outline, verbose=verbose, fast=fast)
 
 
 cli.add_command(make_cmd)
@@ -749,9 +748,11 @@ cli.add_command(setup_cmd)
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 @click.option("--model", default=None, help="Override the Ollama model.")
 @click.option("--once", is_flag=True, help="Generate once and exit.")
+@click.option("--fast", is_flag=True,
+              help="Single-pass generation — one LLM call, much faster on CPU.")
 @click.option("--verbose", "-v", is_flag=True,
               help="Print every prompt and raw LLM response.")
-def join_cmd(folder, model, once, verbose):
+def join_cmd(folder, model, once, fast, verbose):
     """Join an existing project — reads git history and local changes as context.
 
     \b
@@ -788,7 +789,7 @@ def join_cmd(folder, model, once, verbose):
         meta_path.write_text(_json.dumps(meta, indent=2), encoding="utf-8")
         console.print(f"[green]  Created project.json[/green]")
 
-    _track_impl(folder, once, model, edit_outline=False, verbose=verbose)
+    _track_impl(folder, once, model, edit_outline=False, verbose=verbose, fast=fast)
 
 
 cli.add_command(join_cmd)

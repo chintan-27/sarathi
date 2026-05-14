@@ -1012,10 +1012,10 @@ def _chat_via_ollama(model: str, system: str, user: str,
     ]
 
     chunks: list[str] = []
-    out_tokens = 0
-    eval_tokens = 0          # Ollama's reported token count (accurate)
+    out_tokens  = 0
+    eval_tokens = 0
     est_in      = (len(system) + len(user)) // 4
-    t0          = time.perf_counter()
+    t0          = None   # starts on first output token, not on request
 
     with Progress(
         SpinnerColumn(),
@@ -1033,29 +1033,32 @@ def _chat_via_ollama(model: str, system: str, user: str,
         for chunk in _ollama.chat(model=model, messages=messages, stream=True):
             text = chunk.get("message", {}).get("content", "")
             if text:
+                if t0 is None:
+                    t0 = time.perf_counter()   # start timer on first output token
                 chunks.append(text)
                 out_tokens += 1
 
             # Ollama reports accurate counts in the final chunk
             if chunk.get("done"):
                 eval_tokens = chunk.get("eval_count", out_tokens)
-                eval_dur    = chunk.get("eval_duration", 0)   # ns
+                eval_dur    = chunk.get("eval_duration", 0)   # ns — pure generation time
                 tps         = eval_tokens / (eval_dur / 1e9) if eval_dur else 0
             else:
-                elapsed = time.perf_counter() - t0
-                tps     = out_tokens / max(elapsed, 0.5)
+                elapsed = time.perf_counter() - t0 if t0 else 0
+                tps     = out_tokens / max(elapsed, 0.1) if elapsed else 0
 
             progress.update(
                 task,
                 description=(
-                    f"in ~{est_in:,}  out {out_tokens}  ·  {tps:.1f} tok/s"
+                    f"in ~{est_in:,}  out {out_tokens}"
+                    + (f"  ·  {tps:.1f} tok/s" if tps else "  ·  loading...")
                 ),
             )
 
-    # Final accurate numbers from Ollama
+    # Final accurate numbers from Ollama (eval_duration = pure generation time)
     final_tokens = eval_tokens or out_tokens
-    elapsed      = time.perf_counter() - t0
-    final_tps    = eval_tokens / (elapsed) if eval_tokens else out_tokens / max(elapsed, 1)
+    elapsed      = time.perf_counter() - t0 if t0 else 0
+    final_tps    = eval_tokens / (elapsed) if (eval_tokens and elapsed) else 0
     _con.print(
         f"  [green]✓[/green]  "
         f"in [dim]~{est_in:,}[/dim]  ·  "

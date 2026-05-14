@@ -33,7 +33,7 @@ def _unload_all() -> None:
         pass
 
 
-def benchmark_model(name: str) -> dict:
+def benchmark_model(name: str, verbose: bool = False) -> dict:
     """Unload all models, then cold-start benchmark the given model.
 
     Reports:
@@ -42,39 +42,62 @@ def benchmark_model(name: str) -> dict:
       - eval_tokens: number of tokens generated
     """
     import ollama as _ollama
+    from rich.rule import Rule
 
     _PROMPT = "Write the numbers 1 through 50, one per line. Only numbers."
 
     try:
-        # Clear RAM so this model loads fresh — gives accurate load_duration
+        console.print(f"[dim]  Unloading models from RAM...[/dim]", end="\r")
         _unload_all()
+
+        if verbose:
+            console.print()
+            console.print(Rule(f"[bold cyan]{name}[/bold cyan]", style="cyan"))
+            console.print(f"[dim]PROMPT:[/dim]  {_PROMPT}")
+            console.print(f"[dim]Sending to Ollama...[/dim]")
 
         resp = _ollama.generate(
             model=name,
             prompt=_PROMPT,
             options={"num_predict": 100},
-            keep_alive=0,   # unload immediately after — don't hog RAM
+            keep_alive=0,
         )
 
         eval_count    = resp.get("eval_count", 0)
-        eval_duration = resp.get("eval_duration", 0)   # ns — pure generation
-        load_duration = resp.get("load_duration", 0)   # ns — cold load into RAM
+        eval_duration = resp.get("eval_duration", 0)   # ns
+        load_duration = resp.get("load_duration", 0)   # ns
+        prompt_eval   = resp.get("prompt_eval_count", 0)
+        prompt_dur    = resp.get("prompt_eval_duration", 0)
         total_ns      = resp.get("total_duration", 0)
+        response_text = resp.get("response", "")
 
         if eval_count and eval_duration:
             tps = eval_count / (eval_duration / 1e9)
         else:
-            text = resp.get("response", "")
-            tps  = len(text.split()) / max(total_ns / 1e9, 0.001)
+            tps = len(response_text.split()) / max(total_ns / 1e9, 0.001)
+
+        if verbose:
+            console.print(f"\n[dim]RESPONSE:[/dim]")
+            console.print(f"[green]{response_text.strip()}[/green]")
+            console.print()
+            console.print(f"[dim]  Load time      :[/dim] {load_duration/1e9:.2f}s")
+            console.print(f"[dim]  Prompt tokens  :[/dim] {prompt_eval}  ({prompt_dur/1e9:.2f}s)")
+            console.print(f"[dim]  Gen tokens     :[/dim] {eval_count}  ({eval_duration/1e9:.2f}s)")
+            console.print(f"[dim]  Gen speed      :[/dim] [bold]{tps:.1f} tok/s[/bold]")
+            console.print(f"[dim]  Total          :[/dim] {total_ns/1e9:.2f}s")
+            console.print()
 
         return {
             "tps":         tps,
             "latency":     total_ns / 1e9,
             "load_s":      load_duration / 1e9,
             "eval_tokens": eval_count,
+            "response":    response_text,
             "ok":          True,
         }
     except Exception as e:
+        if verbose:
+            console.print(f"[red]  Error: {e}[/red]")
         return {"tps": 0, "latency": 0, "ok": False, "error": str(e)}
 
 # ── Model catalogue ────────────────────────────────────────────────────────────

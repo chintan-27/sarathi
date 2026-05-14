@@ -492,7 +492,9 @@ cli.add_command(clean_cmd)
 @click.command("models")
 @click.option("--benchmark", "-b", is_flag=True,
               help="Run a quick speed test on each pulled model (tok/s).")
-def models_cmd(benchmark):
+@click.option("--verbose", "-v", is_flag=True,
+              help="Show prompt, full response, and per-phase timing for each model.")
+def models_cmd(benchmark, verbose):
     """List Ollama models on this machine, flagging vision-capable ones."""
     import shutil, ollama
 
@@ -520,8 +522,9 @@ def models_cmd(benchmark):
         if benchmark:
             try:
                 from .setup_wizard import benchmark_model
-                console.print(f"[dim]  Benchmarking {name}...[/dim]", end="\r")
-                r       = benchmark_model(name)
+                if not verbose:
+                    console.print(f"[dim]  Benchmarking {name}...[/dim]", end="\r")
+                r       = benchmark_model(name, verbose=verbose)
                 if not r["ok"]:
                     row += [f"[red]{str(r.get('error',''))[:20]}[/red]", "—", "—"]
                 else:

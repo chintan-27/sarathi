@@ -103,24 +103,53 @@ def benchmark_model(name: str, verbose: bool = False) -> dict:
 # ── Model catalogue ────────────────────────────────────────────────────────────
 # Each entry: (ollama_name, display_name, ram_gb_needed, vision, quality_note)
 MODELS = [
-    ("kimi-k2.5:cloud",   "Kimi K2.5 Cloud",      2,   False,
-     "Best overall — cloud-routed via Ollama, no local RAM needed"),
-    ("qwen3.5:cloud",     "Qwen 3.5 Cloud",        2,   False,
-     "Fast cloud model, great structured output"),
-    ("glm-5:cloud",       "GLM-5 Cloud",           2,   False,
+    # ── Cloud (no local RAM) ──────────────────────────────────────────────────
+    ("kimi-k2.5:cloud",      "Kimi K2.5 Cloud",         2,  False,
+     "Best overall quality — cloud-routed, no local RAM needed"),
+    ("qwen3.5:cloud",        "Qwen 3.5 Cloud",          2,  False,
+     "Fast cloud, great structured output"),
+    ("glm-5:cloud",          "GLM-5 Cloud",             2,  False,
      "Strong reasoning, good for data analysis decks"),
-    ("qwen3:1.7b",        "Qwen 3 1.7B (fast)",    2,   False,
-     "Tiny & fast on CPU — use with --fast flag (~5 min/presentation)"),
-    ("qwen2.5:3b",        "Qwen 2.5 3B (fast)",    3,   False,
-     "Good quality/speed balance on CPU — recommended for local-only"),
-    ("qwen3.5",           "Qwen 3.5 8B",           6,   False,
-     "Best local 8B quality — slow on CPU (~30+ min/presentation)"),
-    ("gemma3:12b",        "Gemma 3 12B",           9,   True,
-     "Multimodal, 128K context — great for image-heavy projects"),
-    ("llama3.2-vision",   "Llama 3.2 Vision 11B",  8,   True,
-     "Best local vision model for reading charts/images"),
-    ("qwen2.5-coder:7b",  "Qwen 2.5 Coder 7B",     5,  False,
-     "Reliable HTML/code generation on CPU"),
+
+    # ── Tiny / fast (≤ 2 GB) — ideal for --fast mode ─────────────────────────
+    ("qwen3:1.7b",           "Qwen 3 1.7B",             2,  False,
+     "Fastest local model — best for --fast mode"),
+    ("qwen2.5:1.5b",         "Qwen 2.5 1.5B",           2,  False,
+     "Very small, fast on any CPU"),
+    ("gemma3:1b",            "Gemma 3 1B",              2,  False,
+     "Tiny Gemma — fast, decent quality"),
+
+    # ── Small (2–4 GB) — good speed/quality balance ───────────────────────────
+    ("qwen2.5:3b",           "Qwen 2.5 3B",             3,  False,
+     "Best small general model — recommended fast model"),
+    ("qwen2.5-coder:3b",     "Qwen 2.5 Coder 3B",       3,  False,
+     "Small coder — recommended for --fast HTML generation"),
+    ("gemma3:4b",            "Gemma 3 4B",              4,  True,
+     "Multimodal, good reasoning — recommended planner + vision"),
+    ("phi4-mini",            "Phi-4 Mini",              4,  False,
+     "Strong reasoning for a small model"),
+
+    # ── Medium (4–8 GB) — quality coder/planner models ───────────────────────
+    ("qwen2.5-coder:7b",     "Qwen 2.5 Coder 7B",       5,  False,
+     "Recommended coder — strong HTML/JS output"),
+    ("qwen2.5:7b",           "Qwen 2.5 7B",             5,  False,
+     "Good all-rounder, solid reasoning"),
+    ("qwen3.5",              "Qwen 3.5 8B",             6,  False,
+     "Best local 8B quality"),
+    ("mistral:7b",           "Mistral 7B",              5,  False,
+     "Fast and capable general model"),
+    ("llama3.1:8b",          "Llama 3.1 8B",            6,  False,
+     "Meta's capable 8B model"),
+    ("deepseek-coder-v2:16b","DeepSeek Coder V2 16B",   10, False,
+     "Elite coding model — best HTML/JS if RAM allows"),
+
+    # ── Large vision (8–12 GB) ────────────────────────────────────────────────
+    ("llama3.2-vision",      "Llama 3.2 Vision 11B",    8,  True,
+     "Best vision model for reading charts and images"),
+    ("gemma3:12b",           "Gemma 3 12B",             9,  True,
+     "Multimodal, 128K context, great for image-heavy projects"),
+    ("llava:13b",            "LLaVA 13B",               9,  True,
+     "Strong vision-language model"),
 ]
 
 
@@ -453,13 +482,15 @@ def run() -> None:
 
     # ── Role assignment ────────────────────────────────────────────────────────
     console.print(Panel(
-        "[bold]Sarathi uses three specialized model roles:[/bold]\n\n"
-        "  [cyan]Planner[/cyan]   — narrative outline, reasoning  "
+        "[bold]Sarathi uses four specialized model roles:[/bold]\n\n"
+        "  [cyan]Planner[/cyan]   — narrative outline, reasoning      "
         "[dim](recommended: gemma3:4b)[/dim]\n"
-        "  [cyan]Coder[/cyan]     — HTML/JS slide rendering        "
+        "  [cyan]Coder[/cyan]     — HTML/JS slide rendering            "
         "[dim](recommended: qwen2.5-coder:3b)[/dim]\n"
-        "  [cyan]Vision[/cyan]    — image/chart interpretation     "
-        "[dim](recommended: gemma3:4b — multimodal)[/dim]\n\n"
+        "  [cyan]Vision[/cyan]    — image/chart interpretation         "
+        "[dim](recommended: gemma3:4b — multimodal)[/dim]\n"
+        "  [cyan]Fast[/cyan]      — single-pass [bold]--fast[/bold] mode (speed > quality)  "
+        "[dim](recommended: qwen2.5:3b or qwen3:1.7b)[/dim]\n\n"
         "[dim]Enter a number from the table above or type a model name directly.[/dim]",
         border_style="cyan", title="Model Roles"
     ))
@@ -508,9 +539,10 @@ def run() -> None:
 
         return name
 
-    planner_model = _pick_model("Planner", "gemma3:4b",       "Gemma 3 4B")
-    coder_model   = _pick_model("Coder",   "qwen2.5-coder:3b","Qwen 2.5 Coder 3B")
-    vision_model  = _pick_model("Vision",  "gemma3:4b",       "Gemma 3 4B")
+    planner_model = _pick_model("Planner", "gemma3:4b",        "Gemma 3 4B")
+    coder_model   = _pick_model("Coder",   "qwen2.5-coder:3b", "Qwen 2.5 Coder 3B")
+    vision_model  = _pick_model("Vision",  "gemma3:4b",        "Gemma 3 4B")
+    fast_model    = _pick_model("Fast",    "qwen2.5:3b",       "Qwen 2.5 3B")
 
     primary_model = coder_model  # used as fallback `model` key
 
@@ -559,13 +591,15 @@ def run() -> None:
         "planner_model": planner_model,
         "coder_model":   coder_model,
         "vision_model":  vision_model,
+        "fast_model":    fast_model,
     })
     global_cfg.write_text(json.dumps(existing, indent=2), encoding="utf-8")
     console.print(
         f"\n[green]✓ Model roles saved to ~/.config/sarathi/config.json[/green]\n"
         f"  Planner : [cyan]{planner_model}[/cyan]\n"
         f"  Coder   : [cyan]{coder_model}[/cyan]\n"
-        f"  Vision  : [cyan]{vision_model}[/cyan]"
+        f"  Vision  : [cyan]{vision_model}[/cyan]\n"
+        f"  Fast    : [cyan]{fast_model}[/cyan]"
     )
 
     # ── Auto-benchmark ─────────────────────────────────────────────────────────
@@ -574,7 +608,9 @@ def run() -> None:
         console.print("[bold]Benchmarking your models...[/bold]")
         console.print("[dim]  Sending a short prompt to each model to measure speed.[/dim]\n")
 
-        unique_models = list(dict.fromkeys([planner_model, coder_model, vision_model]))
+        unique_models = list(dict.fromkeys(
+            [planner_model, coder_model, vision_model, fast_model]
+        ))
         bench_table = Table(box=box.SIMPLE, show_header=True, padding=(0, 2),
                             header_style="bold cyan")
         bench_table.add_column("Role")
@@ -595,6 +631,7 @@ def run() -> None:
             ("Planner", planner_model),
             ("Coder",   coder_model),
             ("Vision",  vision_model),
+            ("Fast",    fast_model),
         ]
         for role, m in role_rows:
             r = results.get(m, {})

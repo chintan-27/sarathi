@@ -154,6 +154,7 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
     planner_model  = project_cfg.get("planner_model")
     coder_model    = project_cfg.get("coder_model")
     vision_model   = project_cfg.get("vision_model")
+    fast_model     = project_cfg.get("fast_model")
     theme          = project_cfg.get("theme", "dark-gradient")
     output_dir = project_dir / "output"
     output_dir.mkdir(exist_ok=True)
@@ -213,6 +214,7 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
                 planner_model=planner_model,
                 coder_model=coder_model,
                 vision_model=vision_model,
+                fast_model=fast_model,
             )
             trk.log_event(project_dir, "generated",
                           html=str(html_out.relative_to(project_dir)),

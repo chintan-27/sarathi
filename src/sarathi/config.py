@@ -11,6 +11,7 @@ DEFAULTS: dict = {
     "planner_model":  "gemma3:4b",          # Pass 1: narrative outline
     "coder_model":    "qwen2.5-coder:3b",   # Pass 2: HTML/JS rendering
     "vision_model":   "gemma3:4b",          # image description (multimodal)
+    "fast_model":     "qwen2.5:3b",         # single-pass --fast mode
     "theme":          "dark-gradient",
     "domain":         "auto",
 }

@@ -496,11 +496,13 @@ def generate(
     planner_model: str | None = None,
     coder_model: str | None = None,
     vision_model: str | None = None,
+    fast_model: str | None = None,
 ) -> None:
     # Role-specific model routing — fall back to `model` if roles not set
     _planner = planner_model or model
     _coder   = coder_model   or model
     _vision  = vision_model  or model
+    _fast    = fast_model    or _coder  # --fast uses dedicated small model
 
     from rich.console import Console
     from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
@@ -512,8 +514,10 @@ def generate(
     console = Console()
 
     # ── Preload models into RAM ───────────────────────────────────────────────
-    unique_models = list(dict.fromkeys([_planner, _coder] +
-                                       ([_vision] if _vision != _planner else [])))
+    unique_models = list(dict.fromkeys(
+        [_fast] if fast else [_planner, _coder] +
+        ([_vision] if _vision != _planner else [])
+    ))
     console.print()
     console.print("[bold][sarathi] Loading models into RAM...[/bold]")
 
@@ -582,12 +586,12 @@ def generate(
     if fast:
         console.print(
             f"[dim][sarathi][/dim] Fast mode — single-pass "
-            f"([bold]{_coder}[/bold])..."
+            f"([bold]{_fast}[/bold])..."
         )
         with Progress(SpinnerColumn(), TextColumn("[dim]generating...[/dim]"),
                       console=console, transient=True):
             html_doc = _generate_single_pass(
-                project_name, description, domain, all_files, _coder,
+                project_name, description, domain, all_files, _fast,
                 theme, git_ctx_text, verbose=verbose
             )
         output_html.write_text(html_doc, encoding="utf-8")

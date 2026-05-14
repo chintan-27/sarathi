@@ -397,6 +397,35 @@ def run() -> None:
         if primary_model is None:
             primary_model = name
 
+    # ── Vision model check ────────────────────────────────────────────────────
+    _VISION_KEYWORDS = {"vision", "vl", "llava", "minicpm", "gemma3"}
+    has_vision = any(
+        any(kw in m.lower() for kw in _VISION_KEYWORDS)
+        for m in already_pulled
+    )
+
+    if not has_vision:
+        console.print()
+        console.print(
+            "[yellow]⚠ No vision model detected.[/yellow] "
+            "Sarathi uses a vision model to read charts and images in your projects.\n"
+            "  [dim]Recommended: [bold]gemma3:12b[/bold] (multimodal) or "
+            "[bold]llama3.2-vision[/bold][/dim]"
+        )
+        bin_ = ollama_bin or _ollama_bin()
+        if bin_ and Confirm.ask("  Pull gemma3:12b (vision) now?", default=True):
+            subprocess.run([bin_, "pull", "gemma3:12b"])
+            already_pulled.add("gemma3")
+            console.print("  [green]✓ gemma3:12b ready — vision support enabled.[/green]")
+    else:
+        vision_models = [m for m in already_pulled
+                         if any(kw in m.lower() for kw in _VISION_KEYWORDS)]
+        console.print(
+            f"  [green]✓ Vision model available:[/green] "
+            f"[bold]{', '.join(vision_models)}[/bold]"
+        )
+    console.print()
+
     # ── Save primary model to global config ────────────────────────────────────
     if primary_model:
         from . import config as cfg

@@ -828,14 +828,44 @@ def _chat_via_sdk(model: str, system: str, user: str, verbose: bool = False) -> 
         _vc.print(Syntax(user[:3000] + ("..." if len(user) > 3000 else ""),
                          "text", theme="monokai", word_wrap=True))
 
+    import time
+    from rich.live import Live
+    from rich.text import Text
+
     client = anthropic.Anthropic(base_url=base_url, api_key=api_key)
-    message = client.messages.create(
-        model=model,
-        max_tokens=4096,
-        system=system,
-        messages=[{"role": "user", "content": user}],
+
+    chunks: list[str] = []
+    token_count = 0
+    t0 = time.perf_counter()
+
+    def _status_line() -> Text:
+        elapsed = time.perf_counter() - t0
+        tps = token_count / elapsed if elapsed > 0 else 0
+        return Text(
+            f"  ⟳  {token_count} tokens  ·  {tps:.1f} tok/s  ·  {elapsed:.0f}s elapsed",
+            style="dim"
+        )
+
+    with Live(_status_line(), refresh_per_second=4, console=Console()) as live:
+        with client.messages.stream(
+            model=model,
+            max_tokens=4096,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        ) as stream:
+            for chunk in stream.text_stream:
+                chunks.append(chunk)
+                token_count += 1
+                live.update(_status_line())
+
+    elapsed = time.perf_counter() - t0
+    tps = token_count / elapsed if elapsed > 0 else 0
+    Console().print(
+        f"  [green]✓[/green] {token_count} tokens  ·  "
+        f"[bold]{tps:.1f} tok/s[/bold]  ·  {elapsed:.0f}s"
     )
-    text = message.content[0].text
+
+    text = "".join(chunks)
 
     if verbose:
         _vc.print(Rule("[bold green]RESPONSE[/bold green]", style="green"))

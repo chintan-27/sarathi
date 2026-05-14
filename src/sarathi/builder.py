@@ -588,12 +588,11 @@ def generate(
             f"[dim][sarathi][/dim] Fast mode — single-pass "
             f"([bold]{_fast}[/bold])..."
         )
-        with Progress(SpinnerColumn(), TextColumn("[dim]generating...[/dim]"),
-                      console=console, transient=True):
-            html_doc = _generate_single_pass(
-                project_name, description, domain, all_files, _fast,
-                theme, git_ctx_text, verbose=verbose
-            )
+        # No outer Progress here — _chat_via_ollama owns the live display
+        html_doc = _generate_single_pass(
+            project_name, description, domain, all_files, _fast,
+            theme, git_ctx_text, verbose=verbose
+        )
         output_html.write_text(html_doc, encoding="utf-8")
         console.print(f"[green][sarathi][/green] Presentation ready (single-pass).")
         return
@@ -625,35 +624,22 @@ def generate(
     slides = outline.get("slides", [])
     slides_html: list[str] = []
 
-    console.print(
-        f"[dim][sarathi][/dim] Pass 2 — rendering slides ([bold]{_coder}[/bold])"
-    )
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[dim][sarathi][/dim]"),
-        TextColumn("[cyan]{task.description}[/cyan]"),
-        BarColumn(bar_width=24),
-        TaskProgressColumn(),
-        console=console,
-        transient=False,
-    ) as progress:
-        task = progress.add_task("rendering", total=len(slides))
-        for slide in slides:
-            heading = slide.get("heading", f"Slide {slide.get('id', '')}")
-            progress.update(task, description=f"[bold]{heading[:50]}[/bold]")
-            try:
-                html = _render_slide(slide, artifacts_map, _coder, verbose=verbose)
-            except Exception as exc:
-                html = (
-                    f"<section><h2>{heading}</h2>"
-                    f"<p style='color:#f48fb1'>Render error: {exc}</p></section>"
-                )
-            slides_html.append(html)
-            progress.advance(task)
+    n = len(slides)
+    for i, slide in enumerate(slides, 1):
+        heading = slide.get("heading", f"Slide {slide.get('id', '')}")
+        console.print(
+            f"[dim][sarathi][/dim] Slide {i}/{n} — [bold]{heading[:60]}[/bold]"
+        )
+        try:
+            html = _render_slide(slide, artifacts_map, _coder, verbose=verbose)
+        except Exception as exc:
+            html = (
+                f"<section><h2>{heading}</h2>"
+                f"<p style='color:#f48fb1'>Render error: {exc}</p></section>"
+            )
+        slides_html.append(html)
 
     console.print(f"[green][sarathi][/green] All {len(slides_html)} slides rendered.")
-
-    html_doc = _assemble(outline.get("title", project_name), slides_html, theme)
 
     html_doc = _assemble(outline.get("title", project_name), slides_html, theme)
     output_html.write_text(html_doc, encoding="utf-8")

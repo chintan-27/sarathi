@@ -1001,15 +1001,78 @@ def _chat_via_sdk(model: str, system: str, user: str, verbose: bool = False) -> 
     return text
 
 
+def _chat_via_ollama(model: str, system: str, user: str,
+                     verbose: bool = False) -> str:
+    """Stream generation via Ollama's native Python SDK — reliable, real tok/s."""
+    import ollama as _ollama
+    import time, sys
+
+    if verbose:
+        from rich.console import Console as _C
+        from rich.rule import Rule
+        c = _C()
+        c.print(Rule("[bold cyan]PROMPT → SYSTEM[/bold cyan]", style="cyan"))
+        c.print(system[:3000] + ("..." if len(system) > 3000 else ""))
+        c.print(Rule("[bold cyan]PROMPT → USER[/bold cyan]", style="cyan"))
+        c.print(user[:3000] + ("..." if len(user) > 3000 else ""))
+
+    messages = [
+        {"role": "system",    "content": system},
+        {"role": "user",      "content": user},
+    ]
+
+    chunks: list[str] = []
+    out_tokens = 0
+    est_in     = (len(system) + len(user)) // 4
+    t0         = time.perf_counter()
+    BAR_MAX    = 40
+
+    def _show(done: bool = False) -> None:
+        elapsed = time.perf_counter() - t0
+        tps     = out_tokens / max(elapsed, 0.5)
+        elapsed_str = f"{elapsed:.0f}s" if elapsed < 60 else f"{elapsed/60:.1f}m"
+        filled  = min(out_tokens // 15, BAR_MAX)
+        bar     = "█" * filled + "░" * (BAR_MAX - filled)
+        sym     = "✓" if done else "⟳"
+        line    = (
+            f"  {sym} [{bar}]  "
+            f"in ~{est_in:,}  out {out_tokens}  "
+            f"  {tps:.1f} tok/s  {elapsed_str}"
+        )
+        sys.stdout.write(f"\r{line:<110}")
+        sys.stdout.flush()
+
+    _show()
+
+    for chunk in _ollama.chat(model=model, messages=messages, stream=True):
+        text = chunk.get("message", {}).get("content", "")
+        if text:
+            chunks.append(text)
+            out_tokens += 1
+            if out_tokens % 3 == 0:
+                _show()
+
+    sys.stdout.write("\r" + " " * 112 + "\r")
+    sys.stdout.flush()
+    _show(done=True)
+    print()   # newline after final summary
+
+    result = "".join(chunks)
+
+    if verbose:
+        from rich.console import Console as _C
+        from rich.rule import Rule
+        from rich.panel import Panel
+        c = _C()
+        c.print(Rule("[bold green]RESPONSE[/bold green]", style="green"))
+        c.print(Panel(result[:4000] + ("..." if len(result) > 4000 else ""),
+                      border_style="green", expand=False))
+
+    return result
+
+
 def _chat(model: str, system: str, user: str, verbose: bool = False) -> str:
-    if _claude_cli_available():
-        try:
-            return _chat_via_claude_code(model, system, user, verbose=verbose)
-        except RuntimeError as exc:
-            import sys as _sys
-            print(f"\n[sarathi] claude CLI failed: {exc} — falling back to SDK",
-                  file=_sys.stderr)
-    return _chat_via_sdk(model, system, user, verbose=verbose)
+    return _chat_via_ollama(model, system, user, verbose=verbose)
 
 
 def _generate_outline(

@@ -814,6 +814,9 @@ def _chat_via_claude_code(model: str, system: str, user: str,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, bufsize=1,
     )
+    if verbose:
+        print(f"  [claude] cmd: {' '.join(cmd[:6])} ...")
+        print(f"  [claude] ANTHROPIC_BASE_URL={env.get('ANTHROPIC_BASE_URL')}")
 
     try:
         for raw_line in proc.stdout:
@@ -867,10 +870,18 @@ def _chat_via_claude_code(model: str, system: str, user: str,
                     out_tokens = len(result_text.split())
                 _show()
 
-        proc.wait(timeout=10)
+        proc.wait(timeout=30)
     except Exception as exc:
         proc.kill()
         raise RuntimeError(f"claude stream error: {exc}") from exc
+
+    # Capture stderr for diagnostics
+    stderr_out = ""
+    if proc.stderr:
+        try:
+            stderr_out = proc.stderr.read(800).strip()
+        except Exception:
+            pass
 
     # Final summary line
     elapsed = time.perf_counter() - t0
@@ -881,12 +892,15 @@ def _chat_via_claude_code(model: str, system: str, user: str,
     print(f"  ✓  in: {in_str}  ·  out: {out_tokens}  ·  {tps:.1f} tok/s  ·  {elapsed:.0f}s")
 
     if proc.returncode not in (0, None):
-        err = proc.stderr.read(400) if proc.stderr else ""
-        raise RuntimeError(f"claude exited {proc.returncode}: {err}")
+        raise RuntimeError(
+            f"claude exited {proc.returncode}"
+            + (f": {stderr_out}" if stderr_out else "")
+        )
 
     output = "".join(chunks).strip()
     if not output:
-        raise RuntimeError("claude CLI returned empty output")
+        err_detail = f" stderr: {stderr_out}" if stderr_out else ""
+        raise RuntimeError(f"claude CLI returned empty output.{err_detail}")
     return output
 
 
@@ -992,10 +1006,9 @@ def _chat(model: str, system: str, user: str, verbose: bool = False) -> str:
         try:
             return _chat_via_claude_code(model, system, user, verbose=verbose)
         except RuntimeError as exc:
-            # Fall back to SDK if claude CLI fails (e.g. model name not accepted)
-            Console().print(
-                f"[yellow][sarathi] claude CLI failed ({exc}), falling back to SDK[/yellow]"
-            )
+            import sys as _sys
+            print(f"\n[sarathi] claude CLI failed: {exc} — falling back to SDK",
+                  file=_sys.stderr)
     return _chat_via_sdk(model, system, user, verbose=verbose)
 
 

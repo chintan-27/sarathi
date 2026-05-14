@@ -52,6 +52,8 @@ def cli():
       sarathi join <folder>/                 join an existing project (reads git history)
       sarathi track <folder>/                watch + auto-generate on file changes
       sarathi mark <folder>/ --name "v1"     plant a milestone
+      sarathi viraam                         end-of-session: mark + generate all projects
+      sarathi update                         regenerate all projects with pending changes
       sarathi portfolio                      dashboard at localhost:7432
 
     \b
@@ -824,3 +826,133 @@ def join_cmd(folder, model, once, fast, offload, verbose):
 
 
 cli.add_command(join_cmd)
+
+
+# ── update / navakar ──────────────────────────────────────────────────────────
+
+def _update_impl(fast: bool, offload: bool, model: str | None):
+    """Scan all registered projects, regenerate those with pending changes."""
+    from . import portfolio as ptf
+    from . import tracker as trk
+    from pathlib import Path as _Path
+
+    registry = ptf._load_registry()
+    if not registry:
+        console.print("[yellow]No projects registered. Run sarathi init or join first.[/yellow]")
+        return
+
+    pending_projects = []
+    for key, info in registry.items():
+        p = _Path(info["path"])
+        if not p.exists():
+            continue
+        pending = trk.files_since_last_generated(p)
+        if pending:
+            pending_projects.append((p, pending))
+
+    if not pending_projects:
+        console.print("[green]✓ All projects are up to date.[/green]")
+        return
+
+    console.print(
+        f"[dim][sarathi][/dim] Found [bold]{len(pending_projects)}[/bold] project(s) with pending changes:"
+    )
+    for p, files in pending_projects:
+        console.print(f"  [cyan]{p.name}[/cyan] — {len(files)} file(s) changed")
+
+    console.print()
+    for project_dir, _ in pending_projects:
+        console.print(f"[dim]━━━ Updating [bold]{project_dir.name}[/bold] ━━━[/dim]")
+        _track_impl(str(project_dir), True, model, False, fast=fast, offload=offload)
+        console.print()
+
+
+@click.command("update")
+@click.option("--fast", is_flag=True, help="Use fast model for all projects.")
+@click.option("--offload", is_flag=True, help="Unload models between projects.")
+@click.option("--model", default=None, help="Override model for all projects.")
+def update_cmd(fast, offload, model):
+    """Regenerate all projects that have pending file changes. (Sanskrit: navakar)"""
+    _update_impl(fast=fast, offload=offload, model=model)
+
+
+@click.command("navakar", hidden=True)
+@click.option("--fast", is_flag=True)
+@click.option("--offload", is_flag=True)
+@click.option("--model", default=None)
+def navakar_cmd(fast, offload, model):
+    """Regenerate all projects with pending changes. (navakar = renewal)"""
+    _update_impl(fast=fast, offload=offload, model=model)
+
+
+cli.add_command(update_cmd)
+cli.add_command(navakar_cmd)
+
+
+# ── viraam ────────────────────────────────────────────────────────────────────
+
+def _viraam_impl(milestone_name: str, fast: bool, offload: bool, model: str | None):
+    """End-of-session: mark a milestone on every active project, then regenerate all."""
+    from . import portfolio as ptf
+    from . import tracker as trk
+    from pathlib import Path as _Path
+    from datetime import datetime as _dt
+
+    label = milestone_name or f"session {_dt.now().strftime('%Y-%m-%d %H:%M')}"
+    registry = ptf._load_registry()
+
+    if not registry:
+        console.print("[yellow]No projects registered.[/yellow]")
+        return
+
+    active = [(k, _Path(info["path"])) for k, info in registry.items()
+              if _Path(info["path"]).exists()]
+
+    console.print(Panel(
+        f"[bold cyan]viraam[/bold cyan] — end of session\n\n"
+        f"Marking milestone [bold]\"{label}\"[/bold] on {len(active)} project(s)\n"
+        f"then generating presentations for all.",
+        border_style="cyan",
+    ))
+    console.print()
+
+    for _, project_dir in active:
+        trk.init_tracker(project_dir)
+        trk.log_event(project_dir, "milestone", label=label,
+                      file_hashes=trk.snapshot_hashes(project_dir))
+        console.print(f"  [green]★[/green] {project_dir.name} — milestone marked")
+
+    console.print()
+    for _, project_dir in active:
+        console.print(f"[dim]━━━ Generating [bold]{project_dir.name}[/bold] ━━━[/dim]")
+        _track_impl(str(project_dir), True, model, False, fast=fast, offload=offload)
+        console.print()
+
+    console.print(Panel(
+        f"[bold green]✓ viraam complete[/bold green]\n\n"
+        f"Milestone [bold]\"{label}\"[/bold] marked and presentations generated\n"
+        f"for all {len(active)} project(s).\n\n"
+        f"Run [cyan]sarathi portfolio[/cyan] to view everything.",
+        border_style="green",
+    ))
+
+
+@click.command("viraam")
+@click.option("--name", default="", help="Milestone label (default: session timestamp).")
+@click.option("--fast", is_flag=True, help="Use fast model for all projects.")
+@click.option("--offload", is_flag=True, help="Unload models between projects.")
+@click.option("--model", default=None, help="Override model for all projects.")
+def viraam_cmd(name, fast, offload, model):
+    """End-of-session: mark a milestone on all projects, then generate all presentations.
+
+    \b
+    viraam (Sanskrit: pause/rest) — run this at the end of your work session.
+    It will:
+      1. Mark a named milestone on every tracked project
+      2. Regenerate presentations for all projects
+      3. Open the portfolio dashboard
+    """
+    _viraam_impl(milestone_name=name, fast=fast, offload=offload, model=model)
+
+
+cli.add_command(viraam_cmd)

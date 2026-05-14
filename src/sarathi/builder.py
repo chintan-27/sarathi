@@ -779,10 +779,34 @@ Slide 2 — CONTEXT (the real problem):
   <aside class="notes">{{expand on why this problem matters, what alternatives exist}}</aside>
 </section>
 
-Middle slides — use these patterns:
+Middle slides — patterns by content type:
+
+  SCREENSHOT/IMAGE — if image files are provided, dedicate a full slide:
+  <section data-auto-animate>
+    <h2>{{what the screenshot shows — not "Screenshot" as a label}}</h2>
+    <img class="r-stretch" src="{{FULL DATA URI}}" alt="{{description}}">
+    <p style="font-size:.5em;color:var(--dim)">{{one annotation pointing to the key thing}}</p>
+    <aside class="notes">{{walk through what the viewer is seeing}}</aside>
+  </section>
+
+  PLOT/CHART — for data visualisations, same pattern as screenshot but with insight heading:
+  <section data-auto-animate>
+    <h2>{{conclusion drawn from the chart — the "so what"}}</h2>
+    <img class="r-stretch" src="{{chart data URI}}" alt="{{chart description}}">
+    <aside class="notes">{{explain the trend, outlier, or key data point}}</aside>
+  </section>
+
+  CODE: heading=what the code does, pre/code block 10-20 lines, subtitle=why this design
   FEATURE/CAPABILITY: heading=conclusion, bullets=fragment li, notes=specific detail
-  CODE: heading=what the code does, pre/code block, subtitle=why designed this way
   ARCHITECTURE: heading=the key design decision, bullets=components and their roles
+
+  METRIC CALLOUT — if there's a standout number, give it its own slide:
+  <section data-auto-animate>
+    <p style="color:var(--accent);font-size:.6em;text-transform:uppercase;letter-spacing:.1em">KEY RESULT</p>
+    <h2 class="r-fit-text hero-metric">{{the actual number}}</h2>
+    <p class="subtitle">{{what it means}}</p>
+    <aside class="notes">{{context: what changed to achieve this, why this level matters}}</aside>
+  </section>
 
 Second-to-last — TAKEAWAYS:
 <section data-auto-animate>
@@ -1046,7 +1070,7 @@ def _chat_via_sdk(model: str, system: str, user: str, verbose: bool = False) -> 
 
     with client.messages.stream(
         model=model,
-        max_tokens=4096,
+        max_tokens=8192,
         system=system,
         messages=[{"role": "user", "content": user}],
     ) as stream:

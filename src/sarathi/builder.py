@@ -835,14 +835,16 @@ def _chat_via_sdk(model: str, system: str, user: str, verbose: bool = False) -> 
     client = anthropic.Anthropic(base_url=base_url, api_key=api_key)
 
     chunks: list[str] = []
-    token_count = 0
+    out_tokens = 0
+    in_tokens  = 0
     t0 = time.perf_counter()
 
     def _status_line() -> Text:
         elapsed = time.perf_counter() - t0
-        tps = token_count / elapsed if elapsed > 0 else 0
+        tps     = out_tokens / elapsed if elapsed > 0 else 0
+        in_str  = f"in: {in_tokens}" if in_tokens else f"in: ~{(len(system)+len(user))//4}"
         return Text(
-            f"  ⟳  {token_count} tokens  ·  {tps:.1f} tok/s  ·  {elapsed:.0f}s elapsed",
+            f"  ⟳  {in_str}  ·  out: {out_tokens}  ·  {tps:.1f} tok/s  ·  {elapsed:.0f}s",
             style="dim"
         )
 
@@ -853,15 +855,26 @@ def _chat_via_sdk(model: str, system: str, user: str, verbose: bool = False) -> 
             system=system,
             messages=[{"role": "user", "content": user}],
         ) as stream:
-            for chunk in stream.text_stream:
-                chunks.append(chunk)
-                token_count += 1
+            for event in stream:
+                event_type = getattr(event, "type", "")
+                if event_type == "message_start":
+                    usage = getattr(getattr(event, "message", None), "usage", None)
+                    if usage:
+                        in_tokens = getattr(usage, "input_tokens", 0)
+                elif event_type == "content_block_delta":
+                    delta = getattr(event, "delta", None)
+                    text_chunk = getattr(delta, "text", "") if delta else ""
+                    if text_chunk:
+                        chunks.append(text_chunk)
+                        out_tokens += 1
                 live.update(_status_line())
 
     elapsed = time.perf_counter() - t0
-    tps = token_count / elapsed if elapsed > 0 else 0
+    tps = out_tokens / elapsed if elapsed > 0 else 0
     Console().print(
-        f"  [green]✓[/green] {token_count} tokens  ·  "
+        f"  [green]✓[/green]  "
+        f"in: [dim]{in_tokens}[/dim]  ·  "
+        f"out: [bold]{out_tokens}[/bold]  ·  "
         f"[bold]{tps:.1f} tok/s[/bold]  ·  {elapsed:.0f}s"
     )
 

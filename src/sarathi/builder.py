@@ -491,6 +491,7 @@ def generate(
     outline_path: Path | None = None,
     domain_override: str | None = None,
     git_ctx_text: str | None = None,
+    verbose: bool = False,
 ) -> None:
     from rich.console import Console
     from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
@@ -520,7 +521,8 @@ def generate(
     else:
         console.print(f"[dim][sarathi][/dim] Pass 1 — planning narrative outline...")
         outline = _generate_outline(
-            project_name, description, domain, all_files, model, git_ctx_text
+            project_name, description, domain, all_files, model, git_ctx_text,
+            verbose=verbose,
         )
         n_slides = len(outline.get("slides", []))
         title = outline.get("title", project_name)
@@ -551,7 +553,7 @@ def generate(
             heading = slide.get("heading", f"Slide {slide.get('id', '')}")
             progress.update(task, description=f"[bold]{heading[:50]}[/bold]")
             try:
-                html = _render_slide(slide, artifacts_map, model)
+                html = _render_slide(slide, artifacts_map, model, verbose=verbose)
             except Exception as exc:
                 html = (
                     f"<section><h2>{heading}</h2>"
@@ -632,13 +634,25 @@ def _chat_via_claude_code(model: str, system: str, user: str) -> str:
     return output
 
 
-def _chat_via_sdk(model: str, system: str, user: str) -> str:
-    """Fallback: call the Anthropic SDK directly against Ollama's API."""
+def _chat_via_sdk(model: str, system: str, user: str, verbose: bool = False) -> str:
     import anthropic
+    from rich.console import Console
+    from rich.rule import Rule
+    from rich.syntax import Syntax
+    from rich.panel import Panel
 
     base_url = os.environ.get("ANTHROPIC_BASE_URL", _OLLAMA_BASE)
     api_key  = os.environ.get("ANTHROPIC_AUTH_TOKEN",
                os.environ.get("ANTHROPIC_API_KEY", _OLLAMA_KEY))
+
+    if verbose:
+        _vc = Console()
+        _vc.print(Rule("[bold cyan]PROMPT → SYSTEM[/bold cyan]", style="cyan"))
+        _vc.print(Syntax(system[:3000] + ("..." if len(system) > 3000 else ""),
+                         "text", theme="monokai", word_wrap=True))
+        _vc.print(Rule("[bold cyan]PROMPT → USER[/bold cyan]", style="cyan"))
+        _vc.print(Syntax(user[:3000] + ("..." if len(user) > 3000 else ""),
+                         "text", theme="monokai", word_wrap=True))
 
     client = anthropic.Anthropic(base_url=base_url, api_key=api_key)
     message = client.messages.create(
@@ -647,16 +661,20 @@ def _chat_via_sdk(model: str, system: str, user: str) -> str:
         system=system,
         messages=[{"role": "user", "content": user}],
     )
-    return message.content[0].text
+    text = message.content[0].text
+
+    if verbose:
+        _vc.print(Rule("[bold green]RESPONSE[/bold green]", style="green"))
+        _vc.print(Panel(
+            text[:4000] + ("..." if len(text) > 4000 else ""),
+            border_style="green", expand=False
+        ))
+
+    return text
 
 
-def _chat(model: str, system: str, user: str) -> str:
-    """Generate text via Anthropic SDK → Ollama's compatible API.
-
-    Uses the SDK directly — reliable, no subprocess complexity.
-    Ollama must be running: `ollama serve`
-    """
-    return _chat_via_sdk(model, system, user)
+def _chat(model: str, system: str, user: str, verbose: bool = False) -> str:
+    return _chat_via_sdk(model, system, user, verbose=verbose)
 
 
 def _generate_outline(
@@ -666,9 +684,10 @@ def _generate_outline(
     files: list[ResultFile],
     model: str,
     git_ctx_text: str | None = None,
+    verbose: bool = False,
 ) -> dict:
     user_msg = _planner_user(project_name, description, domain, files, git_ctx_text)
-    text = _chat(model, _PLANNER_SYSTEM, user_msg)
+    text = _chat(model, _PLANNER_SYSTEM, user_msg, verbose=verbose)
     return _extract_json(text)
 
 
@@ -676,7 +695,8 @@ def _render_slide(
     slide: dict,
     artifacts_map: dict[str, ResultFile],
     model: str,
+    verbose: bool = False,
 ) -> str:
     user_msg = _coder_user(slide, artifacts_map)
-    text = _chat(model, _CODER_SYSTEM, user_msg)
+    text = _chat(model, _CODER_SYSTEM, user_msg, verbose=verbose)
     return _extract_section(text)

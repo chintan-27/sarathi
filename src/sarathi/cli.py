@@ -129,7 +129,8 @@ cli.add_command(arambh_cmd)
 
 # ── track / yatra ─────────────────────────────────────────────────────────────
 
-def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool):
+def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
+                verbose: bool = False):
     project_dir = Path(folder).resolve()
     meta_path = project_dir / "project.json"
 
@@ -204,6 +205,7 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool):
                 theme=theme,
                 outline_path=outline_path,
                 git_ctx_text=git_ctx_text,
+                verbose=verbose,
             )
             trk.log_event(project_dir, "generated",
                           html=str(html_out.relative_to(project_dir)),
@@ -237,24 +239,26 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool):
 @click.option("--model", default=None, help="Override the Ollama model.")
 @click.option("--edit-outline", is_flag=True,
               help="Save JSON outline for editing before rendering slides.")
-def track_cmd(folder, once, model, edit_outline):
+@click.option("--verbose", "-v", is_flag=True,
+              help="Print every prompt sent to the LLM and its raw response.")
+def track_cmd(folder, once, model, edit_outline, verbose):
     """Watch a project folder and regenerate on every file change.
 
     Scans for new results, pre-renders charts, calls the LLM, and writes
     HTML + PDF + PPTX to output/. Ctrl-C to stop watching.
     """
-    _track_impl(folder, once, model, edit_outline)
+    _track_impl(folder, once, model, edit_outline, verbose=verbose)
 
 
 @click.command("yatra", hidden=True)
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 @click.option("--once", is_flag=True, help="Generate once and exit.")
 @click.option("--model", default=None, help="Override the Ollama model.")
-@click.option("--edit-outline", is_flag=True,
-              help="Save JSON outline for editing before rendering slides.")
-def yatra_cmd(folder, once, model, edit_outline):
+@click.option("--edit-outline", is_flag=True)
+@click.option("--verbose", "-v", is_flag=True)
+def yatra_cmd(folder, once, model, edit_outline, verbose):
     """Watch a project folder and regenerate on every file change. (yatra = journey)"""
-    _track_impl(folder, once, model, edit_outline)
+    _track_impl(folder, once, model, edit_outline, verbose=verbose)
 
 
 cli.add_command(track_cmd)
@@ -268,21 +272,24 @@ cli.add_command(yatra_cmd)
 @click.option("--once", is_flag=True, default=True, hidden=True)
 @click.option("--model", default=None, help="Override the Ollama model.")
 @click.option("--edit-outline", is_flag=True)
-def make_cmd(folder, once, model, edit_outline):
+@click.option("--verbose", "-v", is_flag=True,
+              help="Print every prompt and raw LLM response.")
+def make_cmd(folder, once, model, edit_outline, verbose):
     """Generate a presentation once and exit (no watching).
 
     Use --edit-outline to inspect and edit the narrative plan before slides render.
     """
-    _track_impl(folder, True, model, edit_outline)
+    _track_impl(folder, True, model, edit_outline, verbose=verbose)
 
 
 @click.command("bana", hidden=True)
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 @click.option("--model", default=None, help="Override the Ollama model.")
 @click.option("--edit-outline", is_flag=True)
-def bana_cmd(folder, model, edit_outline):
+@click.option("--verbose", "-v", is_flag=True)
+def bana_cmd(folder, model, edit_outline, verbose):
     """Generate a presentation once and exit. (bana = build)"""
-    _track_impl(folder, True, model, edit_outline)
+    _track_impl(folder, True, model, edit_outline, verbose=verbose)
 
 
 cli.add_command(make_cmd)
@@ -717,7 +724,9 @@ cli.add_command(setup_cmd)
 @click.argument("folder", type=click.Path(exists=True, file_okay=False))
 @click.option("--model", default=None, help="Override the Ollama model.")
 @click.option("--once", is_flag=True, help="Generate once and exit.")
-def join_cmd(folder, model, once):
+@click.option("--verbose", "-v", is_flag=True,
+              help="Print every prompt and raw LLM response.")
+def join_cmd(folder, model, once, verbose):
     """Join an existing project — reads git history and local changes as context.
 
     \b
@@ -754,7 +763,7 @@ def join_cmd(folder, model, once):
         meta_path.write_text(_json.dumps(meta, indent=2), encoding="utf-8")
         console.print(f"[green]  Created project.json[/green]")
 
-    _track_impl(folder, once, model, edit_outline=False)
+    _track_impl(folder, once, model, edit_outline=False, verbose=verbose)
 
 
 cli.add_command(join_cmd)

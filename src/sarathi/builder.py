@@ -563,7 +563,7 @@ def generate(
 
     # Context trimming — fast mode or large file sets get aggressive limits
     if fast:
-        all_files = _trim_context(all_files, max_chars=6000, max_files=8)
+        all_files = _trim_context(all_files, max_chars=12000, max_files=10)
         console.print(
             f"[dim][sarathi][/dim] Fast mode — using {len(all_files)} file(s) "
             f"(trimmed for speed)"
@@ -692,52 +692,71 @@ def _generate_single_pass(
     git_ctx_text: str | None,
     verbose: bool = False,
 ) -> str:
-    """Generate a complete Reveal.js HTML presentation in one LLM call."""
+    """Generate slides in one LLM call, then wrap with our guaranteed-correct HTML shell.
+
+    Ask for <section> elements only — never ask the model to generate the full HTML
+    boilerplate (CDN, scripts, theme) because it always gets it wrong.
+    """
     dc = _DOMAIN_CONFIG.get(domain, _DOMAIN_CONFIG["ml"])
-    theme_css = _THEMES.get(theme, _THEMES["dark-gradient"])
 
     file_parts: list[str] = []
     for rf in files:
         if rf.type in ("image", "svg"):
-            file_parts.append(f"[IMAGE: {rf.filename}]\n<img src=\"{rf.content}\">")
+            file_parts.append(
+                f"[IMAGE: {rf.filename}] — embed as: "
+                f"<img class=\"r-stretch\" src=\"{rf.content[:80]}...\">"
+            )
         elif rf.type == "data":
-            file_parts.append(f"[DATA: {rf.filename}]\n{rf.content[:800]}")
+            file_parts.append(f"[DATA: {rf.filename}]\n{rf.content[:1200]}")
         else:
-            file_parts.append(f"[{rf.type.upper()}: {rf.filename}]\n{rf.content[:600]}")
+            file_parts.append(f"[{rf.type.upper()}: {rf.filename}]\n{rf.content[:800]}")
 
-    git_block = f"\n<GitContext>\n{git_ctx_text}\n</GitContext>" if git_ctx_text else ""
+    git_block = f"<GitContext>\n{git_ctx_text}\n</GitContext>\n\n" if git_ctx_text else ""
 
     system = f"""\
-You are an expert Reveal.js presentation engineer. Generate a complete, self-contained \
-HTML presentation. Output ONLY the full HTML document — nothing else.
+You are an expert Reveal.js slide author. Generate 6-8 <section> elements for a \
+Reveal.js presentation. Output ONLY the <section> elements — no <!DOCTYPE>, no <html>, \
+no <head>, no <script>, no <style>. Just the raw <section> blocks.
 
-Theme CSS to inject inline:
-{theme_css}
-
-Narrative arc for {domain}: {dc['arc']}
+Narrative arc ({domain}): {dc['arc']}
 Tone: {dc['tone']}
-Use 6-8 slides. Use data-auto-animate, r-fit-text for hero metrics, r-stretch for images.
-Each section must have <aside class="notes">.
+
+Rules:
+- First <section>: title slide with <h1> project name and <p class="subtitle"> one-liner
+- Each slide: specific heading (a conclusion, not a label) + 3-5 bullets or an image
+- Use data-auto-animate on adjacent <section> tags for smooth transitions
+- Use <h2 class="r-fit-text"> for any standout metric (big number, key result)
+- Use <img class="r-stretch" src="DATA_URI"> for images — embed the full data URI
+- Every <section> must end with <aside class="notes">2-3 sentences</aside>
+- Last slide: Key Takeaways with 3-5 specific, complete insights
+- DO NOT use placeholder text. Only use real content from the files and git history below.
 """
 
     user = (
-        f"Project: {project_name}\nDescription: {description}\n"
-        f"{git_block}\n\nFiles:\n" + "\n\n".join(file_parts) +
-        "\n\nGenerate the complete Reveal.js HTML now."
+        f"{git_block}"
+        f"Project: {project_name}\n"
+        f"Description: {description}\n\n"
+        f"Files:\n" + "\n\n".join(file_parts) +
+        "\n\nGenerate the <section> slides now. Only output <section>...</section> blocks."
     )
 
-    from datetime import date
     text = _chat(model, system, user, verbose=verbose)
 
-    # Extract HTML
-    start = text.find("<!DOCTYPE")
-    if start == -1:
-        start = text.find("<html")
-    if start != -1:
-        return text[start:]
+    # Extract all <section> blocks from the response
+    sections = re.findall(r"<section[\s\S]*?</section>", text, re.IGNORECASE)
 
-    # Fallback: wrap whatever came back
-    return _assemble(project_name, [f"<section><p>{text[:500]}</p></section>"], theme)
+    if sections:
+        return _assemble(project_name, sections, theme)
+
+    # Fallback: model returned something — wrap it
+    cleaned = re.sub(r"```[a-z]*\n?|```", "", text).strip()
+    if cleaned:
+        return _assemble(project_name,
+                         [f"<section><h2>{project_name}</h2><p>{cleaned[:800]}</p></section>"],
+                         theme)
+    return _assemble(project_name,
+                     [f"<section><h2>{project_name}</h2><p>{description}</p></section>"],
+                     theme)
 
 
 _OLLAMA_BASE = "http://localhost:11434"

@@ -834,46 +834,61 @@ def _chat_via_sdk(model: str, system: str, user: str, verbose: bool = False) -> 
 
     client = anthropic.Anthropic(base_url=base_url, api_key=api_key)
 
+    import sys
+
     chunks: list[str] = []
     out_tokens = 0
     in_tokens  = 0
-    t0 = time.perf_counter()
+    t0         = time.perf_counter()
+    est_in     = (len(system) + len(user)) // 4
 
-    def _status_line() -> Text:
-        elapsed = time.perf_counter() - t0
-        tps     = out_tokens / elapsed if elapsed > 0 else 0
-        in_str  = f"in: {in_tokens}" if in_tokens else f"in: ~{(len(system)+len(user))//4}"
-        return Text(
-            f"  ⟳  {in_str}  ·  out: {out_tokens}  ·  {tps:.1f} tok/s  ·  {elapsed:.0f}s",
-            style="dim"
+    def _print_progress() -> None:
+        elapsed  = time.perf_counter() - t0
+        tps      = out_tokens / max(elapsed, 0.5)   # avoid 0.0 at start
+        in_str   = f"{in_tokens:,}" if in_tokens else f"~{est_in:,}"
+        elapsed_str = f"{elapsed:.0f}s" if elapsed < 60 else f"{elapsed/60:.1f}m"
+        bar_full = min(out_tokens // 20, 30)        # fills as tokens come in
+        bar      = "█" * bar_full + "░" * (30 - bar_full)
+        line     = (
+            f"  [{bar}]  "
+            f"prompt {in_str} → generating {out_tokens}  "
+            f"  {tps:.1f} tok/s  {elapsed_str}"
         )
+        sys.stdout.write(f"\r{line:<100}")
+        sys.stdout.flush()
 
-    with Live(_status_line(), refresh_per_second=4, console=Console()) as live:
-        with client.messages.stream(
-            model=model,
-            max_tokens=4096,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        ) as stream:
-            for event in stream:
-                event_type = getattr(event, "type", "")
-                if event_type == "message_start":
-                    usage = getattr(getattr(event, "message", None), "usage", None)
-                    if usage:
-                        in_tokens = getattr(usage, "input_tokens", 0)
-                elif event_type == "content_block_delta":
-                    delta = getattr(event, "delta", None)
-                    text_chunk = getattr(delta, "text", "") if delta else ""
-                    if text_chunk:
-                        chunks.append(text_chunk)
-                        out_tokens += 1
-                live.update(_status_line())
+    with client.messages.stream(
+        model=model,
+        max_tokens=4096,
+        system=system,
+        messages=[{"role": "user", "content": user}],
+    ) as stream:
+        for event in stream:
+            event_type = getattr(event, "type", "")
+            if event_type == "message_start":
+                usage = getattr(getattr(event, "message", None), "usage", None)
+                if usage:
+                    in_tokens = getattr(usage, "input_tokens", 0)
+                _print_progress()
+            elif event_type == "content_block_delta":
+                delta = getattr(event, "delta", None)
+                chunk = getattr(delta, "text", "") if delta else ""
+                if chunk:
+                    chunks.append(chunk)
+                    out_tokens += 1
+                    # Update every 5 tokens — smooth but not excessive
+                    if out_tokens % 5 == 0:
+                        _print_progress()
 
+    # Move to next line and print final summary
     elapsed = time.perf_counter() - t0
-    tps = out_tokens / elapsed if elapsed > 0 else 0
+    tps     = out_tokens / max(elapsed, 0.001)
+    in_str  = str(in_tokens) if in_tokens else f"~{est_in}"
+    sys.stdout.write("\r" + " " * 82 + "\r")   # clear the progress line
+    sys.stdout.flush()
     Console().print(
         f"  [green]✓[/green]  "
-        f"in: [dim]{in_tokens}[/dim]  ·  "
+        f"in: [dim]{in_str}[/dim]  ·  "
         f"out: [bold]{out_tokens}[/bold]  ·  "
         f"[bold]{tps:.1f} tok/s[/bold]  ·  {elapsed:.0f}s"
     )

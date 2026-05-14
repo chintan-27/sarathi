@@ -30,6 +30,7 @@ classifiers = [
 dependencies = [
     "click>=8.0",
     "watchdog>=3.0",
+    "ollama>=0.3",
     "playwright>=1.40",
     "Pillow>=10.0",
     "rich>=13.0",

@@ -494,7 +494,7 @@ cli.add_command(clean_cmd)
               help="Run a quick speed test on each pulled model (tok/s).")
 def models_cmd(benchmark):
     """List Ollama models on this machine, flagging vision-capable ones."""
-    import shutil, ollama, time, anthropic
+    import shutil, ollama
 
     try:
         result = ollama.list()
@@ -518,21 +518,11 @@ def models_cmd(benchmark):
 
         if benchmark:
             try:
+                from .setup_wizard import benchmark_model
                 console.print(f"[dim]  Benchmarking {name}...[/dim]", end="\r")
-                _prompt = "Count from 1 to 30, one number per line. Only numbers."
-                client  = anthropic.Anthropic(
-                    base_url="http://localhost:11434", api_key="ollama"
-                )
-                t0    = time.perf_counter()
-                msg   = client.messages.create(
-                    model=name, max_tokens=256,
-                    messages=[{"role": "user", "content": _prompt}],
-                )
-                elapsed = time.perf_counter() - t0
-                text    = msg.content[0].text if msg.content else ""
-                # count words as rough token proxy (Ollama doesn't return usage)
-                tokens  = len(text.split())
-                tps_val = tokens / elapsed if elapsed > 0 else 0
+                r       = benchmark_model(name)
+                tps_val = r["tps"]
+                elapsed = r["latency"]
                 color   = "green" if tps_val >= 5 else "yellow" if tps_val >= 2 else "red"
                 tps     = f"[{color}]{tps_val:.1f} tok/s[/{color}]"
                 lat     = f"[dim]{elapsed:.1f}s[/dim]"

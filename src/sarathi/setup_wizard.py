@@ -14,6 +14,32 @@ from rich import box
 
 console = Console()
 
+
+# ── Shared benchmark function ─────────────────────────────────────────────────
+
+def benchmark_model(name: str) -> dict:
+    """Run a quick speed test on a single model. Returns {tps, latency, ok}."""
+    import time
+    import anthropic
+
+    _PROMPT = "Count from 1 to 30, one number per line. Only numbers, nothing else."
+    try:
+        client  = anthropic.Anthropic(
+            base_url="http://localhost:11434", api_key="ollama"
+        )
+        t0      = time.perf_counter()
+        msg     = client.messages.create(
+            model=name, max_tokens=256,
+            messages=[{"role": "user", "content": _PROMPT}],
+        )
+        elapsed = time.perf_counter() - t0
+        text    = msg.content[0].text if msg.content else ""
+        tokens  = len(text.split())
+        tps     = tokens / elapsed if elapsed > 0 else 0
+        return {"tps": tps, "latency": elapsed, "ok": True, "tokens": tokens}
+    except Exception as e:
+        return {"tps": 0, "latency": 0, "ok": False, "error": str(e)}
+
 # ── Model catalogue ────────────────────────────────────────────────────────────
 # Each entry: (ollama_name, display_name, ram_gb_needed, vision, quality_note)
 MODELS = [
@@ -445,6 +471,68 @@ def run() -> None:
         f"  Coder   : [cyan]{coder_model}[/cyan]\n"
         f"  Vision  : [cyan]{vision_model}[/cyan]"
     )
+
+    # ── Auto-benchmark ─────────────────────────────────────────────────────────
+    if installed and running:
+        console.print()
+        console.print("[bold]Benchmarking your models...[/bold]")
+        console.print("[dim]  Sending a short prompt to each model to measure speed.[/dim]\n")
+
+        unique_models = list(dict.fromkeys([planner_model, coder_model, vision_model]))
+        bench_table = Table(box=box.SIMPLE, show_header=True, padding=(0, 2),
+                            header_style="bold cyan")
+        bench_table.add_column("Role")
+        bench_table.add_column("Model", style="bold")
+        bench_table.add_column("Speed",   justify="right")
+        bench_table.add_column("Latency", justify="right")
+        bench_table.add_column("Est. presentation", justify="right")
+
+        results: dict[str, dict] = {}
+        for m in unique_models:
+            if ":cloud" in m:
+                results[m] = {"tps": 999, "latency": 0, "ok": True}
+                continue
+            console.print(f"  [dim]Testing {m}...[/dim]", end="\r")
+            results[m] = benchmark_model(m)
+
+        role_rows = [
+            ("Planner", planner_model),
+            ("Coder",   coder_model),
+            ("Vision",  vision_model),
+        ]
+        for role, m in role_rows:
+            r = results.get(m, {})
+            if not r.get("ok"):
+                bench_table.add_row(role, m, "[red]error[/red]", "—", "—")
+                continue
+
+            tps = r["tps"]
+            lat = r["latency"]
+
+            if ":cloud" in m:
+                tps_str  = "[green]cloud[/green]"
+                lat_str  = "[dim]—[/dim]"
+                est_str  = "[green]~1-3 min[/green]"
+            else:
+                color    = "green" if tps >= 5 else "yellow" if tps >= 2 else "red"
+                tps_str  = f"[{color}]{tps:.1f} tok/s[/{color}]"
+                lat_str  = f"[dim]{lat:.1f}s[/dim]"
+                # Rough estimate: planner ~300 tok, coder ~500 tok × N slides
+                if role == "Planner":
+                    est_min = 300 / max(tps, 0.1) / 60
+                else:
+                    est_min = (500 * 8) / max(tps, 0.1) / 60
+                color2   = "green" if est_min < 10 else "yellow" if est_min < 30 else "red"
+                est_str  = f"[{color2}]~{est_min:.0f} min[/{color2}]"
+
+            bench_table.add_row(role, m, tps_str, lat_str, est_str)
+
+        console.print()
+        console.print(bench_table)
+        console.print(
+            "\n[dim]Tip: if speeds are < 2 tok/s, use [bold]sarathi join --fast[/bold] "
+            "for single-pass generation.[/dim]"
+        )
 
     # ── How Sarathi uses Ollama ────────────────────────────────────────────────
     console.print()

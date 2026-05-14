@@ -492,9 +492,16 @@ def generate(
     domain_override: str | None = None,
     git_ctx_text: str | None = None,
 ) -> None:
+    from rich.console import Console
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
     from . import viz as viz_module
 
+    console = Console()
+
     # Pre-render CSVs to chart images
+    csv_files = [f for f in files if f.type == "data" and f.filename.endswith(".csv")]
+    if csv_files:
+        console.print(f"[dim][sarathi][/dim] Pre-rendering {len(csv_files)} chart(s)...")
     viz_files = viz_module.process(files, project_dir)
     all_files = files + viz_files
 
@@ -504,32 +511,58 @@ def generate(
         artifacts_map[rf.filename] = rf
 
     domain = domain_override or detect_domain(description, files)
+    console.print(f"[dim][sarathi][/dim] Domain detected: [cyan]{domain}[/cyan]")
 
     # Pass 1: generate or load outline
     if outline_path and outline_path.exists():
+        console.print(f"[dim][sarathi][/dim] Loading outline from {outline_path.name}...")
         outline = json.loads(outline_path.read_text(encoding="utf-8"))
     else:
+        console.print(f"[dim][sarathi][/dim] Pass 1 — planning narrative outline...")
         outline = _generate_outline(
             project_name, description, domain, all_files, model, git_ctx_text
         )
+        n_slides = len(outline.get("slides", []))
+        title = outline.get("title", project_name)
+        console.print(
+            f"[green][sarathi][/green] Outline ready: [bold]{title}[/bold] "
+            f"— {n_slides} slides planned"
+        )
         if outline_path:
             outline_path.parent.mkdir(parents=True, exist_ok=True)
-            outline_path.write_text(
-                json.dumps(outline, indent=2), encoding="utf-8"
-            )
-            return  # caller will re-invoke after user edits
+            outline_path.write_text(json.dumps(outline, indent=2), encoding="utf-8")
+            return
 
     # Pass 2: render each slide
+    slides = outline.get("slides", [])
     slides_html: list[str] = []
-    for slide in outline.get("slides", []):
-        try:
-            html = _render_slide(slide, artifacts_map, model)
-        except Exception as exc:
-            html = (
-                f"<section><h2>{slide.get('heading', 'Slide')}</h2>"
-                f"<p style='color:#f48fb1'>Render error: {exc}</p></section>"
-            )
-        slides_html.append(html)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[dim][sarathi][/dim] Pass 2 —"),
+        TextColumn("[cyan]{task.description}[/cyan]"),
+        BarColumn(bar_width=24),
+        TaskProgressColumn(),
+        console=console,
+        transient=False,
+    ) as progress:
+        task = progress.add_task("rendering slides", total=len(slides))
+        for slide in slides:
+            heading = slide.get("heading", f"Slide {slide.get('id', '')}")
+            progress.update(task, description=f"[bold]{heading[:50]}[/bold]")
+            try:
+                html = _render_slide(slide, artifacts_map, model)
+            except Exception as exc:
+                html = (
+                    f"<section><h2>{heading}</h2>"
+                    f"<p style='color:#f48fb1'>Render error: {exc}</p></section>"
+                )
+            slides_html.append(html)
+            progress.advance(task)
+
+    console.print(
+        f"[green][sarathi][/green] All {len(slides_html)} slides rendered."
+    )
 
     html_doc = _assemble(outline.get("title", project_name), slides_html, theme)
     output_html.write_text(html_doc, encoding="utf-8")

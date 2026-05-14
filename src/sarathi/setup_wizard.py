@@ -293,34 +293,57 @@ def run() -> None:
     # ── Model selection ────────────────────────────────────────────────────────
     recommended, others = recommend_models(hw)
 
-    console.print("[bold]Recommended models for your hardware:[/bold]")
+    # Detect already-pulled models
+    already_pulled: set[str] = set()
+    if installed and running:
+        try:
+            raw = subprocess.run(
+                [ollama_bin, "list"], capture_output=True, text=True, timeout=5
+            ).stdout
+            for line in raw.splitlines()[1:]:  # skip header
+                parts = line.split()
+                if parts:
+                    already_pulled.add(parts[0].split(":")[0])  # strip tag
+        except Exception:
+            pass
+
+    console.print("[bold]Available models for your hardware:[/bold]")
     model_table = Table(box=box.SIMPLE, show_header=True, padding=(0, 2),
                         header_style="bold cyan")
-    model_table.add_column("#",     width=3, style="dim")
-    model_table.add_column("Model", style="bold")
-    model_table.add_column("RAM",   width=8)
-    model_table.add_column("Vision", width=7)
-    model_table.add_column("Notes", style="dim")
+    model_table.add_column("#",       width=3,  style="dim")
+    model_table.add_column("Model",   style="bold")
+    model_table.add_column("RAM",     width=8)
+    model_table.add_column("Vision",  width=7)
+    model_table.add_column("Status",  width=10)
+    model_table.add_column("Notes",   style="dim")
 
     for i, (name, display, needed, vision, note) in enumerate(recommended, 1):
-        is_cloud = ":cloud" in name
-        ram_str = "[green]cloud[/green]" if is_cloud else f"{needed} GB"
-        vis_str = "[cyan]✓[/cyan]" if vision else "[dim]—[/dim]"
-        model_table.add_row(str(i), display, ram_str, vis_str, note)
+        is_cloud  = ":cloud" in name
+        base_name = name.split(":")[0]
+        pulled    = base_name in already_pulled or is_cloud
+        ram_str   = "[green]cloud[/green]" if is_cloud else f"{needed} GB"
+        vis_str   = "[cyan]✓[/cyan]" if vision else "[dim]—[/dim]"
+        status    = "[green]ready[/green]" if pulled else "[dim]not pulled[/dim]"
+        model_table.add_row(str(i), display, ram_str, vis_str, status, note)
 
     console.print(model_table)
 
     if others:
-        console.print(
-            f"[dim]  {len(others)} model(s) skipped — need more RAM than available.[/dim]"
-        )
+        console.print(f"[dim]  {len(others)} model(s) need more RAM than available.[/dim]")
     console.print()
 
-    # Ask which to pull
-    default_choice = "1"
+    # Find best already-available model as the smart default
+    default_idx = "1"
+    for i, (name, _, _, _, _) in enumerate(recommended, 1):
+        base = name.split(":")[0]
+        if base in already_pulled or ":cloud" in name:
+            default_idx = str(i)
+            break
+
     choice_str = console.input(
-        f"[bold]Pick model(s) to pull[/bold] (comma-separated numbers, or press Enter for [cyan]#1[/cyan]): "
-    ).strip() or default_choice
+        f"[bold]Pick model(s) to use/pull[/bold] "
+        f"(comma-separated numbers, Enter for [cyan]#{default_idx}[/cyan]): "
+    ).strip() or default_idx
 
     chosen_indices = []
     for part in choice_str.split(","):
@@ -332,19 +355,23 @@ def run() -> None:
             pass
 
     if not chosen_indices:
-        console.print("[yellow]No valid selection — skipping model pull.[/yellow]")
+        console.print("[yellow]No valid selection — skipping.[/yellow]")
         chosen_models = []
     else:
         chosen_models = [recommended[i] for i in chosen_indices]
 
-    # Pull each chosen model
+    # Pull each chosen model (skip if already available)
     primary_model = None
     for name, display, needed, vision, note in chosen_models:
-        console.print(f"\n[dim]Pulling [bold]{display}[/bold] ([cyan]{name}[/cyan])...[/dim]")
-        is_cloud = ":cloud" in name
-        if is_cloud:
+        base_name = name.split(":")[0]
+        is_cloud  = ":cloud" in name
+        is_ready  = base_name in already_pulled
+
+        if is_ready:
+            console.print(f"  [green]✓ {display} already pulled — ready.[/green]")
+        elif is_cloud:
             console.print(
-                "  [dim]Cloud model — no download needed, routed via Ollama at runtime.[/dim]"
+                f"  [green]✓ {display}[/green] [dim]— cloud model, no download needed.[/dim]"
             )
         else:
             bin_ = ollama_bin or _ollama_bin()

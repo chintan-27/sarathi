@@ -514,20 +514,24 @@ def models_cmd(benchmark):
         if benchmark:
             try:
                 console.print(f"[dim]  Benchmarking {name}...[/dim]", end="\r")
-                _prompt = "Count from 1 to 20, one number per line."
-                base_url = "http://localhost:11434"
-                api_key  = "ollama"
-                client   = anthropic.Anthropic(base_url=base_url, api_key=api_key)
-                t0       = time.perf_counter()
-                msg      = client.messages.create(
-                    model=name, max_tokens=128,
+                _prompt = "Count from 1 to 30, one number per line. Only numbers."
+                client  = anthropic.Anthropic(
+                    base_url="http://localhost:11434", api_key="ollama"
+                )
+                t0    = time.perf_counter()
+                msg   = client.messages.create(
+                    model=name, max_tokens=256,
                     messages=[{"role": "user", "content": _prompt}],
                 )
-                elapsed  = time.perf_counter() - t0
-                tokens   = msg.usage.output_tokens if hasattr(msg, "usage") else 0
-                tps      = f"{tokens / elapsed:.0f} tok/s" if elapsed > 0 else "—"
-                lat      = f"{elapsed:.1f}s"
-                row     += [f"[green]{tps}[/green]", f"[dim]{lat}[/dim]"]
+                elapsed = time.perf_counter() - t0
+                text    = msg.content[0].text if msg.content else ""
+                # count words as rough token proxy (Ollama doesn't return usage)
+                tokens  = len(text.split())
+                tps_val = tokens / elapsed if elapsed > 0 else 0
+                color   = "green" if tps_val >= 5 else "yellow" if tps_val >= 2 else "red"
+                tps     = f"[{color}]{tps_val:.1f} tok/s[/{color}]"
+                lat     = f"[dim]{elapsed:.1f}s[/dim]"
+                row    += [tps, lat]
             except Exception as e:
                 row += [f"[red]error[/red]", "[dim]—[/dim]"]
 
@@ -535,10 +539,15 @@ def models_cmd(benchmark):
 
     console.print(table)
     if benchmark:
-        console.print("[dim]Speed measured on a single short prompt — real generation will vary.[/dim]")
+        console.print(
+            "\n[dim]Speed is words/s on a short prompt — actual generation varies with context size.\n"
+            "  ≥ 10 tok/s → fast  (~2-5 min per presentation)\n"
+            "  2–10 tok/s → usable (~10-30 min per presentation)\n"
+            "  < 2 tok/s  → slow  (consider a cloud model instead)[/dim]"
+        )
     console.print(
-        "[dim]Recommended: [bold]qwen3.5[/bold] (local) · "
-        "[bold]kimi-k2.5:cloud[/bold] or [bold]glm-5:cloud[/bold] (cloud via Ollama)[/dim]"
+        "\n[dim]For fast generation without local RAM: [bold]ollama pull kimi-k2.5:cloud[/bold]\n"
+        "Recommended local: [bold]qwen3.5[/bold] · Recommended cloud: [bold]kimi-k2.5:cloud[/bold][/dim]"
     )
 
 

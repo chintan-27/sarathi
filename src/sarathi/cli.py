@@ -749,7 +749,7 @@ def join_cmd(folder, model, once):
             "name": name,
             "description": description,
             "created": _dt.now().isoformat(timespec="seconds"),
-            "model": model or "claude-code",
+            "model": model or DEFAULT_MODEL,
         }
         meta_path.write_text(_json.dumps(meta, indent=2), encoding="utf-8")
         console.print(f"[green]  Created project.json[/green]")

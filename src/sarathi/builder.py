@@ -566,9 +566,9 @@ def _chat_via_claude_code(model: str, system: str, user: str) -> str:
     # otherwise default to local Ollama. Never mutate os.environ.
     env = {
         **os.environ,
-        "ANTHROPIC_BASE_URL":  os.environ.get("ANTHROPIC_BASE_URL",  _OLLAMA_BASE),
+        "ANTHROPIC_BASE_URL":   os.environ.get("ANTHROPIC_BASE_URL",   _OLLAMA_BASE),
         "ANTHROPIC_AUTH_TOKEN": os.environ.get("ANTHROPIC_AUTH_TOKEN", _OLLAMA_KEY),
-        "ANTHROPIC_API_KEY":   os.environ.get("ANTHROPIC_API_KEY",   _OLLAMA_KEY),
+        "ANTHROPIC_API_KEY":    "",   # must be empty so claude uses ANTHROPIC_AUTH_TOKEN
     }
 
     # Combine system + user into a single prompt for -p (print) mode
@@ -578,18 +578,25 @@ def _chat_via_claude_code(model: str, system: str, user: str) -> str:
         [
             "claude",
             "--model", model,
-            "-p", full_prompt,
+            "--print",
             "--output-format", "text",
-            "--dangerously-skip-permissions",   # non-interactive, no file ops
+            "--dangerously-skip-permissions",
+            "--bare",           # skip hooks, CLAUDE.md discovery, keychain — pure API call
+            "--system-prompt", system,
+            "-p", user,         # user message only (system passed separately)
         ],
         capture_output=True, text=True, env=env, timeout=300,
     )
 
     if result.returncode != 0:
-        err = (result.stderr or "").strip()
+        err = (result.stderr or result.stdout or "no output").strip()[:400]
         raise RuntimeError(f"claude CLI exited {result.returncode}: {err}")
 
-    return result.stdout.strip()
+    output = result.stdout.strip()
+    if not output:
+        raise RuntimeError("claude CLI returned empty output")
+
+    return output
 
 
 def _chat_via_sdk(model: str, system: str, user: str) -> str:
@@ -611,9 +618,11 @@ def _chat_via_sdk(model: str, system: str, user: str) -> str:
 
 
 def _chat(model: str, system: str, user: str) -> str:
-    """Route to Claude Code CLI if available, otherwise use Anthropic SDK directly."""
-    if _claude_cli_available():
-        return _chat_via_claude_code(model, system, user)
+    """Generate text via Anthropic SDK → Ollama's compatible API.
+
+    Uses the SDK directly — reliable, no subprocess complexity.
+    Ollama must be running: `ollama serve`
+    """
     return _chat_via_sdk(model, system, user)
 
 

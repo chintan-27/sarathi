@@ -7,6 +7,9 @@ from pathlib import Path
 
 from .scanner import ResultFile
 
+# Populated by _chat_via_ollama; read by generate() to include in returned stats
+_last_gen_tps: float = 0.0
+
 # ── Domain detection ──────────────────────────────────────────────────────────
 
 _ML_KEYWORDS = {
@@ -143,10 +146,20 @@ SLIDE TYPES
 ═══════════════════
 metric_callout → layout_hint "r-fit-text". A real number from the files, big and centred.
 chart/image    → layout_hint "r-stretch". Heading states the conclusion from the visual.
-code           → layout_hint "auto-animate". The most important function or change, 10-20 lines.
+code           → layout_hint "auto-animate". The most important 5-10 lines — never a whole file.
 comparison     → layout_hint "r-stack". Before vs after — only if both states appear in the files.
+table          → layout_hint "". CSV data as a styled HTML table, max 8 rows, one insight heading.
 takeaways      → 3-5 bullets. Each is a complete sentence with a specific detail.
 context/next_steps → layout_hint "" (default).
+
+══════════════════════════════
+SLIDE VARIETY RULES — MANDATORY
+══════════════════════════════
+1. You MUST use at least 4 different slide types across the deck.
+2. If ANY image or chart file is in the artifact list → you MUST include at least one "image" or "chart" slide.
+3. If ANY CSV file is in the artifact list → you MUST include at least one "metric_callout" slide with a real number from that data, OR a "table" slide.
+4. "code" slides are limited to MAX 2 per deck. Use "metric_callout", "table", or "comparison" instead of dumping code.
+5. NEVER produce a deck where all slides are "context" or bullet-only. That is a failure.
 
 ══════════════════════════
 INSIGHT QUALITY — EXAMPLES
@@ -178,13 +191,39 @@ GIT HISTORY GUIDANCE
 
 def _planner_user(project_name: str, description: str, domain: str,
                   files: list[ResultFile],
-                  git_ctx_text: str | None = None) -> str:
+                  git_ctx_text: str | None = None,
+                  delta: dict | None = None) -> str:
     dc = _DOMAIN_CONFIG.get(domain, _DOMAIN_CONFIG["ml"])
     file_list = "\n".join(f"  - [{f.type}] {f.path}" for f in files)
 
     git_block = ""
     if git_ctx_text:
         git_block = f"\n<GitContext>\n{git_ctx_text}\n</GitContext>\n"
+
+    delta_block = ""
+    if delta and delta.get("prev_milestone"):
+        new_f   = delta.get("new_files", [])
+        mod_f   = delta.get("modified_files", [])
+        commits = delta.get("commit_count", 0)
+        days    = delta.get("days_elapsed", 0)
+        prev_ms = delta.get("prev_milestone", "")
+        curr_ms = delta.get("curr_milestone", "")
+        prev_v  = delta.get("prev_version", "?")
+        delta_block = (
+            f"\n<VersionDelta>\n"
+            f"This is version v{prev_v + 1} — a new versioned presentation since milestone \"{prev_ms}\".\n"
+            f"Previous milestone: \"{prev_ms}\"\n"
+            f"Current milestone:  \"{curr_ms}\"\n"
+            f"Days elapsed: {days}\n"
+            f"New files since last version: {len(new_f)} — {', '.join(new_f[:5])}\n"
+            f"Modified files: {len(mod_f)} — {', '.join(mod_f[:5])}\n"
+            f"Commits since last milestone: {commits}\n\n"
+            f"INSTRUCTION: Slide 2 MUST be a 'recap' slide titled something like "
+            f"\"Since v{prev_v}: What Changed\" that summarises the delta above — "
+            f"new files added, commits made, days elapsed, and one sentence on what the team accomplished. "
+            f"Use type: \"context\" with layout_hint \"\" for this slide.\n"
+            f"</VersionDelta>\n"
+        )
 
     return (
         f"<ProjectContext>\n"
@@ -197,7 +236,8 @@ def _planner_user(project_name: str, description: str, domain: str,
         f"Hero metric hint: {dc['hero_hint']}\n"
         f"Special instructions: {dc['special']}\n"
         f"</ProjectContext>\n"
-        f"{git_block}\n"
+        f"{git_block}"
+        f"{delta_block}\n"
         f"<ArtifactList>\n{file_list}\n</ArtifactList>\n\n"
         f"Generate the JSON outline now."
     )
@@ -314,6 +354,24 @@ NEXT STEPS:
   <aside class="notes">{Why these priorities? What would unblock the most value? What did we learn that changes direction?}</aside>
 </section>
 
+TABLE (for CSV data):
+<section data-auto-animate>
+  <h2>{one insight sentence — what the data shows, not "Data Table"}</h2>
+  <table style="width:100%;border-collapse:collapse;font-size:.75em">
+    <thead>
+      <tr style="border-bottom:2px solid var(--accent)">
+        <th style="padding:.4em .8em;text-align:left">{col1}</th>
+        <th style="padding:.4em .8em;text-align:left">{col2}</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="fragment"><td style="padding:.35em .8em">{val}</td><td style="padding:.35em .8em">{val}</td></tr>
+    </tbody>
+  </table>
+  <p class="subtitle">{what this table reveals — the key pattern or outlier}</p>
+  <aside class="notes">{walk the audience through the most important row. What action does this data suggest?}</aside>
+</section>
+
 ══════════════════════
 RULES
 ══════════════════════
@@ -322,8 +380,11 @@ RULES
 3. class="fragment" on every <li> — reveals bullets one at a time
 4. Speaker notes: NEVER write "Note about this slide." Write real, specific notes.
 5. Headings: NEVER write a label. Write a conclusion. "sarathi Cuts Slide Prep from Hours to Minutes" not "Results".
-6. Code: never more than 20 lines. Pick the single most important snippet.
+6. Code: NEVER dump an entire file. Pick the 3-8 most important lines. A code slide must explain WHY those lines matter.
 7. Images: embed the full data URI — never truncate, never use a URL placeholder.
+8. VISUAL FIRST: If the SlideSpec type is "chart" or "image", the slide MUST contain an <img> with the full data URI. Never replace an image slide with bullets.
+9. ANTI-CODE-DUMP: If the slide type is NOT "code", do NOT use a <pre><code> block. Use a metric callout, bullet insight, or table instead.
+10. VARIETY: A deck where every slide is bullets is a failure. Use metric callouts, images, tables, and comparisons whenever the content supports it.
 """
 
 
@@ -519,7 +580,8 @@ def generate(
     coder_model: str | None = None,
     vision_model: str | None = None,
     fast_model: str | None = None,
-) -> None:
+    delta: dict | None = None,
+) -> dict:
     # Role-specific model routing — fall back to `model` if roles not set
     _planner = planner_model or model
     _coder   = coder_model   or model
@@ -610,14 +672,20 @@ def generate(
             f"[dim][sarathi][/dim] Fast mode — single-pass "
             f"([bold]{_fast}[/bold])..."
         )
-        # No outer Progress here — _chat_via_ollama owns the live display
+        t_gen = time.perf_counter()
         html_doc = _generate_single_pass(
             project_name, description, domain, all_files, _fast,
-            theme, git_ctx_text, verbose=verbose
+            theme, git_ctx_text, verbose=verbose, delta=delta
         )
+        duration_s = time.perf_counter() - t_gen
         output_html.write_text(html_doc, encoding="utf-8")
         console.print(f"[green][sarathi][/green] Presentation ready (single-pass).")
-        return
+        return {
+            "tok_s": _last_gen_tps,
+            "duration_s": round(duration_s, 1),
+            "slide_count": html_doc.count("<section"),
+            "mode": "fast",
+        }
 
     # ── Two-pass: outline → slide-by-slide (better quality) ──────────────────
     if outline_path and outline_path.exists():
@@ -630,7 +698,7 @@ def generate(
         )
         outline = _generate_outline(
             project_name, description, domain, all_files, _planner, git_ctx_text,
-            verbose=verbose,
+            verbose=verbose, delta=delta,
         )
         n_slides = len(outline.get("slides", []))
         title = outline.get("title", project_name)
@@ -641,11 +709,12 @@ def generate(
         if outline_path:
             outline_path.parent.mkdir(parents=True, exist_ok=True)
             outline_path.write_text(json.dumps(outline, indent=2), encoding="utf-8")
-            return
+            return {}
 
     slides = outline.get("slides", [])
     slides_html: list[str] = []
 
+    t_gen = time.perf_counter()
     n = len(slides)
     for i, slide in enumerate(slides, 1):
         heading = slide.get("heading", f"Slide {slide.get('id', '')}")
@@ -661,6 +730,7 @@ def generate(
             )
         slides_html.append(html)
 
+    duration_s = time.perf_counter() - t_gen
     console.print(f"[green][sarathi][/green] All {len(slides_html)} slides rendered.")
 
     html_doc = _assemble(outline.get("title", project_name), slides_html, theme)
@@ -675,6 +745,13 @@ def generate(
         pptx_exporter.to_pptx(outline, artifacts_map, pptx_out)
     except Exception:
         pass  # PPTX is best-effort; HTML is primary
+
+    return {
+        "tok_s": _last_gen_tps,
+        "duration_s": round(duration_s, 1),
+        "slide_count": len(slides_html),
+        "mode": "full",
+    }
 
 
 def _trim_context(files: list[ResultFile], max_chars: int, max_files: int) -> list[ResultFile]:
@@ -713,6 +790,7 @@ def _generate_single_pass(
     theme: str,
     git_ctx_text: str | None,
     verbose: bool = False,
+    delta: dict | None = None,
 ) -> str:
     """Generate slides in one LLM call, then wrap with our guaranteed-correct HTML shell.
 
@@ -734,6 +812,25 @@ def _generate_single_pass(
             file_parts.append(f"[{rf.type.upper()}: {rf.filename}]\n{rf.content[:800]}")
 
     git_block = f"<GitContext>\n{git_ctx_text}\n</GitContext>\n\n" if git_ctx_text else ""
+
+    delta_block = ""
+    if delta and delta.get("prev_milestone"):
+        new_f   = delta.get("new_files", [])
+        mod_f   = delta.get("modified_files", [])
+        commits = delta.get("commit_count", 0)
+        days    = delta.get("days_elapsed", 0)
+        prev_ms = delta.get("prev_milestone", "")
+        prev_v  = delta.get("prev_version", "?")
+        delta_block = (
+            f"<VersionDelta>\n"
+            f"This is version v{prev_v + 1} — a new presentation since milestone \"{prev_ms}\".\n"
+            f"New files: {len(new_f)} ({', '.join(new_f[:4])})\n"
+            f"Modified: {len(mod_f)} files\n"
+            f"Commits since last milestone: {commits} over {days} days\n"
+            f"INSTRUCTION: Slide 2 must be a recap titled \"Since v{prev_v}: What Changed\" "
+            f"summarising the delta above in 3 bullets.\n"
+            f"</VersionDelta>\n\n"
+        )
 
     system = f"""\
 You are an expert Reveal.js presentation author. Generate 7-9 <section> elements that \
@@ -830,6 +927,22 @@ Last — NEXT STEPS:
   <aside class="notes">{{why these priorities, what would unblock the most value}}</aside>
 </section>
 
+  TABLE — for CSV data (max 8 rows, real column names and values from the file):
+  <section data-auto-animate>
+    <h2>{{insight: what this data reveals — the key pattern or outlier}}</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:.75em">
+      <thead><tr style="border-bottom:2px solid var(--accent)">
+        <th style="padding:.4em .8em;text-align:left">{{col1}}</th>
+        <th style="padding:.4em .8em;text-align:left">{{col2}}</th>
+      </tr></thead>
+      <tbody>
+        <tr class="fragment"><td style="padding:.35em .8em">{{real val}}</td><td style="padding:.35em .8em">{{real val}}</td></tr>
+      </tbody>
+    </table>
+    <p class="subtitle">{{one sentence annotation on the key row/pattern}}</p>
+    <aside class="notes">{{walk the audience through the most important row or trend}}</aside>
+  </section>
+
 ━━━━━━━━
 RULES
 ━━━━━━━━
@@ -840,10 +953,15 @@ RULES
 - No invented URLs, no placeholder brackets, no lorem ipsum
 - CSS vars available: --accent (#4fc3f7), --accent2 (#f48fb1), --fg, --fg2, --dim, --bg
 - CSS classes: r-fit-text, r-stretch, r-stack, fragment, fade-out, subtitle, hero-metric
+- VISUAL FIRST: if image/chart files are provided, EMBED them with <img class="r-stretch" src="FULL_DATA_URI">
+- ANTI-CODE-DUMP: never fill a slide with an entire code file. Max 8 lines, most important only.
+- VARIETY: at least 3 different slide types across the deck. A deck of all bullet slides is a failure.
+- CSV DATA: if CSV files are provided, show a TABLE slide or METRIC CALLOUT — not a code block.
 """
 
     user = (
         f"{git_block}"
+        f"{delta_block}"
         f"Project: {project_name}\nDescription: {description}\n\n"
         "Files (read carefully — your slides must reference this content):\n\n"
         + "\n\n---\n\n".join(file_parts) +
@@ -1195,6 +1313,10 @@ def _chat_via_ollama(model: str, system: str, user: str,
         f"[bold]{final_tps:.1f} tok/s[/bold]  ·  {elapsed:.0f}s"
     )
 
+    # Expose tps so generate() can include it in returned stats
+    global _last_gen_tps
+    _last_gen_tps = final_tps
+
     result = "".join(chunks)
 
     if verbose:
@@ -1219,8 +1341,9 @@ def _generate_outline(
     model: str,
     git_ctx_text: str | None = None,
     verbose: bool = False,
+    delta: dict | None = None,
 ) -> dict:
-    user_msg = _planner_user(project_name, description, domain, files, git_ctx_text)
+    user_msg = _planner_user(project_name, description, domain, files, git_ctx_text, delta=delta)
     text = _chat(model, _PLANNER_SYSTEM, user_msg, verbose=verbose)
     return _extract_json(text)
 

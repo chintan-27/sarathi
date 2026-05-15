@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import webbrowser
 from datetime import datetime
 from pathlib import Path
@@ -16,10 +17,29 @@ from . import config as cfg
 from . import portfolio as ptf
 from . import setup_wizard
 from . import git_context as gitctx
+from . import jobs as _jobs
 
 console = Console()
 
 DEFAULT_MODEL = "qwen3.5"
+
+
+def _spawn_bg(command: str, cli_args: list[str], label: str = "", meta: dict | None = None) -> None:
+    """Spawn a sarathi sub-command in the background and print a status line.
+
+    Writes a job entry to ~/.config/sarathi/jobs.json so `sarathi jobs`
+    and the portfolio dashboard can track it.
+    """
+    job = _jobs.new_job(command, label=label, **(meta or {}))
+    proc = _jobs.spawn(cli_args + ["--_job-id", job["id"]], log_path=job["log"])
+    _jobs.update_job(job["id"], pid=proc.pid, status="running")
+    console.print(
+        f"[green]⚙  {command}[/green] started in background "
+        f"[dim](PID {proc.pid})[/dim]\n"
+        f"  [dim]Progress: [cyan]sarathi jobs[/cyan]  "
+        f"· Log: [cyan]sarathi logs {job['id']}[/cyan]  "
+        f"· Dashboard: [cyan]sarathi portfolio[/cyan][/dim]"
+    )
 
 VISION_MODEL_KEYWORDS = {"llava", "vision", "vl", "gemma3", "minicpm"}
 
@@ -71,53 +91,242 @@ def _add(english_cmd, sanskrit_cmd):
 
 # ── init / arambh ─────────────────────────────────────────────────────────────
 
-def _init_impl(name: str, description: str, model: str):
-    project_dir = Path(name)
-    if project_dir.exists():
-        console.print(f"[red]Folder '{name}' already exists.[/red]")
-        raise SystemExit(1)
+_DOMAIN_CHOICES = {"ml": "ML / AI", "software": "Software Dev", "data": "Data Analysis", "auto": "Auto-detect"}
+_STATUS_CHOICES  = {"active": "Active", "planning": "Planning", "paused": "On Hold", "shipped": "Shipped"}
 
-    for sub in ("data", "plots", "notes", "output"):
-        (project_dir / sub).mkdir(parents=True)
 
-    meta = {
-        "name": name,
+def _project_wizard(
+    project_dir: Path,
+    *,
+    prefill_name: str = "",
+    prefill_desc: str = "",
+    model: str = DEFAULT_MODEL,
+    existing: bool = False,
+) -> dict:
+    """Interactive wizard to collect comprehensive project metadata.
+
+    Returns the completed meta dict (does NOT write to disk).
+    """
+    from rich.prompt import Prompt, Confirm
+    from rich.rule import Rule
+
+    console.print()
+    console.print(Rule("[bold]Sarathi — New Project Setup[/bold]", style="cyan"))
+    console.print()
+
+    # ── Core identity ──────────────────────────────────────────────────────────
+    name = Prompt.ask(
+        "  [bold cyan]Project name[/bold cyan] [dim](folder slug)[/dim]",
+        default=prefill_name or project_dir.name,
+    ).strip()
+
+    description = Prompt.ask(
+        "  [bold cyan]One-line description[/bold cyan]",
+        default=prefill_desc,
+    ).strip()
+
+    goal = Prompt.ask(
+        "  [bold cyan]Goal / what are you trying to achieve?[/bold cyan] "
+        "[dim](longer — shown in portfolio detail)[/dim]",
+        default="",
+    ).strip()
+
+    # ── Domain ────────────────────────────────────────────────────────────────
+    console.print()
+    console.print("  [bold cyan]Domain[/bold cyan]")
+    for k, v in _DOMAIN_CHOICES.items():
+        console.print(f"    [dim]{k}[/dim]  {v}")
+    domain = Prompt.ask(
+        "  Choose",
+        choices=list(_DOMAIN_CHOICES.keys()),
+        default="auto",
+    )
+
+    # ── Tags ──────────────────────────────────────────────────────────────────
+    tags_raw = Prompt.ask(
+        "  [bold cyan]Tags[/bold cyan] [dim](comma-separated keywords, e.g. yolov8, pytorch, fastapi)[/dim]",
+        default="",
+    ).strip()
+    tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
+
+    # ── Status ────────────────────────────────────────────────────────────────
+    console.print()
+    console.print("  [bold cyan]Status[/bold cyan]")
+    for k, v in _STATUS_CHOICES.items():
+        console.print(f"    [dim]{k}[/dim]  {v}")
+    status = Prompt.ask(
+        "  Choose",
+        choices=list(_STATUS_CHOICES.keys()),
+        default="active",
+    )
+
+    # ── Links ─────────────────────────────────────────────────────────────────
+    repo_url = ""
+    if existing:
+        # Try to auto-detect git remote
+        try:
+            import subprocess
+            repo_url = subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                cwd=str(project_dir), capture_output=True, text=True, timeout=3,
+            ).stdout.strip()
+        except Exception:
+            pass
+    if not repo_url:
+        repo_url = Prompt.ask(
+            "  [bold cyan]Repository URL[/bold cyan] [dim](GitHub / GitLab, optional)[/dim]",
+            default="",
+        ).strip()
+
+    notes_url = Prompt.ask(
+        "  [bold cyan]Related link[/bold cyan] [dim](paper, dataset, Notion page — optional)[/dim]",
+        default="",
+    ).strip()
+
+    # ── Team ──────────────────────────────────────────────────────────────────
+    team = Prompt.ask(
+        "  [bold cyan]Team / collaborators[/bold cyan] [dim](names or 'solo')[/dim]",
+        default="solo",
+    ).strip()
+
+    # ── Model (show current default, offer to change) ─────────────────────────
+    console.print()
+    pcfg = cfg.load_project_config(project_dir) if existing else {}
+    current_model = pcfg.get("model") or model
+    change_model = Confirm.ask(
+        f"  [bold cyan]Model[/bold cyan]: [dim]{current_model}[/dim]  — change?",
+        default=False,
+    )
+    if change_model:
+        current_model = Prompt.ask("  Model name", default=current_model).strip()
+
+    # ── Day-0 milestone ───────────────────────────────────────────────────────
+    console.print()
+    mark_day0 = Confirm.ask(
+        "  Mark a [bold cyan]day-0 milestone[/bold cyan] to record starting state?",
+        default=True,
+    )
+    milestone_label = ""
+    if mark_day0:
+        milestone_label = Prompt.ask(
+            "  Milestone label",
+            default="project started",
+        ).strip()
+
+    return {
+        "name":        name,
         "description": description,
-        "created": datetime.now().isoformat(timespec="seconds"),
-        "model": model,
+        "goal":        goal,
+        "domain":      domain,
+        "tags":        tags,
+        "status":      status,
+        "repo_url":    repo_url,
+        "notes_url":   notes_url,
+        "team":        team,
+        "model":       current_model,
+        "created":     datetime.now().isoformat(timespec="seconds"),
+        "_milestone":  milestone_label,
     }
+
+
+def _write_meta_and_init(project_dir: Path, meta: dict) -> None:
+    """Write project.json, init tracker, register project, optionally mark milestone."""
+    milestone_label = meta.pop("_milestone", "")
+
+    project_dir.mkdir(parents=True, exist_ok=True)
+    for sub in ("data", "plots", "notes", "output"):
+        (project_dir / sub).mkdir(exist_ok=True)
+
     (project_dir / "project.json").write_text(
-        json.dumps(meta, indent=2), encoding="utf-8"
+        json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     trk.init_tracker(project_dir)
-    trk.log_event(project_dir, "init", name=name)
+    trk.log_event(project_dir, "init", name=meta["name"])
+    if milestone_label:
+        hashes = trk.snapshot_hashes(project_dir)
+        trk.log_event(project_dir, "milestone", label=milestone_label, file_hashes=hashes)
     ptf.register_project(project_dir)
 
+
+def _print_init_summary(meta: dict, project_dir: Path) -> None:
+    name   = meta.get("name", project_dir.name)
+    domain = _DOMAIN_CHOICES.get(meta.get("domain", "auto"), "Auto-detect")
+    tags   = ", ".join(meta.get("tags") or []) or "—"
+    status = _STATUS_CHOICES.get(meta.get("status", "active"), "Active")
+    goal   = meta.get("goal") or "—"
+    team   = meta.get("team") or "solo"
+    model  = meta.get("model") or DEFAULT_MODEL
+
+    console.print()
     console.print(Panel(
-        f"[bold green]Project '{name}' created![/bold green]\n\n"
+        f"[bold green]✓  Project '{name}' ready![/bold green]\n\n"
+        f"[dim]Description[/dim]  {meta.get('description','')}\n"
+        f"[dim]Goal       [/dim]  {goal[:80]}\n"
+        f"[dim]Domain     [/dim]  {domain}\n"
+        f"[dim]Tags       [/dim]  {tags}\n"
+        f"[dim]Status     [/dim]  {status}\n"
+        f"[dim]Team       [/dim]  {team}\n"
+        f"[dim]Model      [/dim]  {model}\n\n"
         f"Drop your results into:\n"
-        f"  [cyan]{name}/data/[/cyan]   — CSV, JSON\n"
-        f"  [cyan]{name}/plots/[/cyan]  — PNG, SVG images\n"
-        f"  [cyan]{name}/notes/[/cyan]  — text, markdown\n\n"
+        f"  [cyan]{project_dir}/data/[/cyan]   — CSV, JSON\n"
+        f"  [cyan]{project_dir}/plots/[/cyan]  — PNG, SVG\n"
+        f"  [cyan]{project_dir}/notes/[/cyan]  — text, markdown\n\n"
         f"Then run:\n"
-        f"  [bold]sarathi yatra {name}/[/bold]  (or [bold]sarathi track {name}/[/bold])",
+        f"  [bold]sarathi track {project_dir.name}/[/bold]",
         title="sarathi init / arambh",
+        border_style="green",
     ))
 
 
+def _init_impl(name: str | None, description: str | None, model: str):
+    project_dir = Path(name) if name else Path(".")
+
+    if name and project_dir.exists():
+        console.print(f"[red]Folder '{name}' already exists.[/red]")
+        raise SystemExit(1)
+
+    if name:
+        project_dir = Path(name)
+
+    meta = _project_wizard(
+        project_dir,
+        prefill_name=name or "",
+        prefill_desc=description or "",
+        model=model,
+        existing=False,
+    )
+
+    # Use wizard name as folder if it differs from arg
+    if name is None:
+        project_dir = Path(meta["name"])
+        if project_dir.exists():
+            console.print(f"[red]Folder '{meta['name']}' already exists.[/red]")
+            raise SystemExit(1)
+
+    _write_meta_and_init(project_dir, meta)
+    _print_init_summary(meta, project_dir)
+
+
 @click.command("init")
-@click.argument("name")
-@click.argument("description")
+@click.argument("name", required=False, default=None)
+@click.argument("description", required=False, default=None)
 @click.option("--model", default=DEFAULT_MODEL, show_default=True,
               help="Ollama model to use for generation.")
 def init_cmd(name, description, model):
-    """Create a new project folder with data/, plots/, and notes/ subdirs."""
+    """Create a new project folder with data/, plots/, and notes/ subdirs.
+
+    Run without arguments for the full interactive wizard:
+      sarathi init
+
+    Or pass name and description to pre-fill:
+      sarathi init my-project "Training a YOLOv8 detector"
+    """
     _init_impl(name, description, model)
 
 
 @click.command("arambh", hidden=True)
-@click.argument("name")
-@click.argument("description")
+@click.argument("name", required=False, default=None)
+@click.argument("description", required=False, default=None)
 @click.option("--model", default=DEFAULT_MODEL, show_default=True,
               help="Ollama model to use for generation.")
 def arambh_cmd(name, description, model):
@@ -132,7 +341,8 @@ cli.add_command(arambh_cmd)
 # ── track / yatra ─────────────────────────────────────────────────────────────
 
 def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
-                verbose: bool = False, fast: bool = False, offload: bool = False):
+                verbose: bool = False, fast: bool = False, offload: bool = False,
+                job_id: str = ""):
     project_dir = Path(folder).resolve()
     meta_path = project_dir / "project.json"
 
@@ -215,7 +425,21 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
             )
 
         try:
-            builder.generate(
+            if job_id:
+                _jobs.update_job(job_id, status="running", current=project_dir.name)
+
+            # Detect if there's a new milestone since last generation → include recap
+            delta = trk.get_delta_since_last_milestone(project_dir)
+            if delta:
+                v_next = trk.get_next_version(project_dir)
+                console.print(
+                    f"[dim][sarathi][/dim] New milestone detected — "
+                    f"generating [bold]v{v_next}[/bold] with recap slide "
+                    f"(since \"{delta.get('prev_milestone','')}\")"
+                )
+
+            trk.write_status(project_dir, state="generating", model=effective_model)
+            gen_stats = builder.generate(
                 project_name=meta["name"],
                 description=meta["description"],
                 files=files,
@@ -231,10 +455,16 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
                 coder_model=coder_model,
                 vision_model=vision_model,
                 fast_model=fast_model,
-            )
+                delta=delta or None,
+            ) or {}
+            trk.write_status(project_dir, state="idle")
             trk.log_event(project_dir, "generated",
                           html=str(html_out.relative_to(project_dir)),
-                          model=effective_model)
+                          model=effective_model,
+                          tok_s=gen_stats.get("tok_s", 0),
+                          duration_s=gen_stats.get("duration_s", 0),
+                          slide_count=gen_stats.get("slide_count", 0),
+                          mode=gen_stats.get("mode", "unknown"))
             console.print(f"[green][sarathi] HTML → {html_out}[/green]")
         except Exception as exc:
             console.print(f"[red][sarathi] LLM error: {exc}[/red]")
@@ -251,11 +481,17 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
     if once:
         return
 
-    console.print(
-        f"\n[dim][sarathi] Watching {project_dir.name}/ for changes "
-        "(Ctrl+C to stop)...[/dim]"
-    )
-    watcher.watch(project_dir, generate)
+    import os as _os
+    trk.write_pid(project_dir, _os.getpid())
+    try:
+        console.print(
+            f"\n[dim][sarathi] Watching {project_dir.name}/ for changes "
+            "(Ctrl+C to stop)...[/dim]"
+        )
+        watcher.watch(project_dir, generate)
+    finally:
+        trk.clear_pid(project_dir)
+        trk.write_status(project_dir, state="idle")
 
 
 @click.command("track")
@@ -265,14 +501,27 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
 @click.option("--edit-outline", is_flag=True,
               help="Save JSON outline for editing before rendering slides.")
 @click.option("--fast", is_flag=True,
-              help="Single-pass generation — one LLM call, much faster on CPU.")
+              help="Single-pass generation (faster but lower quality). Default is two-pass.")
 @click.option("--offload", is_flag=True,
               help="Unload all Ollama models from RAM before generating.")
 @click.option("--verbose", "-v", is_flag=True,
               help="Print every prompt sent to the LLM and its raw response.")
-def track_cmd(folder, once, model, edit_outline, fast, offload, verbose):
+@click.option("--bg", is_flag=True,
+              help="Run watcher in background — returns immediately, logs to ~/.config/sarathi/logs/.")
+@click.option("--_job-id", "job_id", default="", hidden=True)
+def track_cmd(folder, once, model, edit_outline, fast, offload, verbose, bg, job_id):
     """Watch a project folder and regenerate on every file change."""
-    _track_impl(folder, once, model, edit_outline, verbose=verbose, fast=fast, offload=offload)
+    if bg:
+        args = ["track", folder]
+        if once:         args += ["--once"]
+        if model:        args += ["--model", model]
+        if edit_outline: args += ["--edit-outline"]
+        if fast:         args += ["--fast"]
+        if offload:      args += ["--offload"]
+        _spawn_bg("track", args, label=folder, meta={"project": folder})
+        return
+    _track_impl(folder, once, model, edit_outline, verbose=verbose,
+                fast=fast, offload=offload, job_id=job_id)
 
 
 @click.command("yatra", hidden=True)
@@ -283,9 +532,16 @@ def track_cmd(folder, once, model, edit_outline, fast, offload, verbose):
 @click.option("--fast", is_flag=True)
 @click.option("--offload", is_flag=True)
 @click.option("--verbose", "-v", is_flag=True)
-def yatra_cmd(folder, once, model, edit_outline, fast, offload, verbose):
+@click.option("--bg", is_flag=True)
+@click.option("--_job-id", "job_id", default="", hidden=True)
+def yatra_cmd(folder, once, model, edit_outline, fast, offload, verbose, bg, job_id):
     """Watch a project folder and regenerate on every file change. (yatra = journey)"""
-    _track_impl(folder, once, model, edit_outline, verbose=verbose, fast=fast, offload=offload)
+    if bg:
+        args = ["yatra", folder] + (["--once"] if once else []) + (["--fast"] if fast else [])
+        _spawn_bg("track", args, label=folder, meta={"project": folder})
+        return
+    _track_impl(folder, once, model, edit_outline, verbose=verbose,
+                fast=fast, offload=offload, job_id=job_id)
 
 
 cli.add_command(track_cmd)
@@ -299,14 +555,25 @@ cli.add_command(yatra_cmd)
 @click.option("--model", default=None, help="Override the Ollama model.")
 @click.option("--edit-outline", is_flag=True)
 @click.option("--fast", is_flag=True,
-              help="Single-pass generation — one LLM call, much faster on CPU.")
+              help="Single-pass generation (faster but lower quality). Default is two-pass.")
 @click.option("--offload", is_flag=True,
               help="Unload all Ollama models from RAM before generating.")
 @click.option("--verbose", "-v", is_flag=True,
               help="Print every prompt and raw LLM response.")
-def make_cmd(folder, model, edit_outline, fast, offload, verbose):
+@click.option("--bg", is_flag=True,
+              help="Generate in background — returns immediately.")
+@click.option("--_job-id", "job_id", default="", hidden=True)
+def make_cmd(folder, model, edit_outline, fast, offload, verbose, bg, job_id):
     """Generate a presentation once and exit (no watching)."""
-    _track_impl(folder, True, model, edit_outline, verbose=verbose, fast=fast, offload=offload)
+    if bg:
+        args = ["make", folder, "--once"]
+        if model:        args += ["--model", model]
+        if fast:         args += ["--fast"]
+        if offload:      args += ["--offload"]
+        _spawn_bg("make", args, label=folder, meta={"project": folder})
+        return
+    _track_impl(folder, True, model, edit_outline, verbose=verbose,
+                fast=fast, offload=offload, job_id=job_id)
 
 
 @click.command("bana", hidden=True)
@@ -316,9 +583,16 @@ def make_cmd(folder, model, edit_outline, fast, offload, verbose):
 @click.option("--fast", is_flag=True)
 @click.option("--offload", is_flag=True)
 @click.option("--verbose", "-v", is_flag=True)
-def bana_cmd(folder, model, edit_outline, fast, offload, verbose):
+@click.option("--bg", is_flag=True)
+@click.option("--_job-id", "job_id", default="", hidden=True)
+def bana_cmd(folder, model, edit_outline, fast, offload, verbose, bg, job_id):
     """Generate a presentation once and exit. (bana = build)"""
-    _track_impl(folder, True, model, edit_outline, verbose=verbose, fast=fast, offload=offload)
+    if bg:
+        _spawn_bg("make", ["bana", folder] + (["--fast"] if fast else []),
+                  label=folder, meta={"project": folder})
+        return
+    _track_impl(folder, True, model, edit_outline, verbose=verbose,
+                fast=fast, offload=offload, job_id=job_id)
 
 
 cli.add_command(make_cmd)
@@ -332,7 +606,20 @@ def _mark_impl(folder: str, name: str):
     trk.init_tracker(project_dir)
     hashes = trk.snapshot_hashes(project_dir)
     trk.log_event(project_dir, "milestone", label=name, file_hashes=hashes)
-    console.print(f"[green][sarathi] ★ Milestone [bold]\"{name}\"[/bold] marked.[/green]")
+
+    # Snapshot current output as a versioned copy
+    vdir = trk.snapshot_output_version(project_dir, name)
+    if vdir:
+        n = trk.get_next_version(project_dir) - 1  # already incremented by snapshot
+        console.print(
+            f"[green][sarathi] ★ Milestone [bold]\"{name}\"[/bold] marked.[/green]\n"
+            f"[dim]  → Presentation archived as [bold]v{n}[/bold] in {vdir.relative_to(project_dir)}[/dim]"
+        )
+    else:
+        console.print(
+            f"[green][sarathi] ★ Milestone [bold]\"{name}\"[/bold] marked.[/green]\n"
+            f"[dim]  (No presentation to archive yet — run sarathi track first)[/dim]"
+        )
 
 
 @click.command("mark")
@@ -780,7 +1067,7 @@ cli.add_command(setup_cmd)
 @click.option("--model", default=None, help="Override the Ollama model.")
 @click.option("--once", is_flag=True, help="Generate once and exit.")
 @click.option("--fast", is_flag=True,
-              help="Single-pass generation — one LLM call, much faster on CPU.")
+              help="Single-pass generation (faster but lower quality). Default is two-pass.")
 @click.option("--offload", is_flag=True,
               help="Unload all Ollama models from RAM before generating.")
 @click.option("--verbose", "-v", is_flag=True,
@@ -806,21 +1093,18 @@ def join_cmd(folder, model, once, fast, offload, verbose):
     meta_path = project_dir / "project.json"
     if not meta_path.exists():
         console.print(
-            f"[dim][sarathi][/dim] No project.json found — "
-            "let's set up basic metadata for this project."
+            f"\n[dim][sarathi][/dim] No project.json found — "
+            "running setup wizard to register this project.\n"
         )
-        name = click.prompt("  Project name", default=project_dir.name)
-        description = click.prompt("  One-line description")
-        import json as _json
-        from datetime import datetime as _dt
-        meta = {
-            "name": name,
-            "description": description,
-            "created": _dt.now().isoformat(timespec="seconds"),
-            "model": model or DEFAULT_MODEL,
-        }
-        meta_path.write_text(_json.dumps(meta, indent=2), encoding="utf-8")
-        console.print(f"[green]  Created project.json[/green]")
+        meta = _project_wizard(
+            project_dir,
+            prefill_name=project_dir.name,
+            model=model or DEFAULT_MODEL,
+            existing=True,
+        )
+        _write_meta_and_init(project_dir, meta)
+        _print_init_summary(meta, project_dir)
+        console.print()
 
     _track_impl(folder, once, model, edit_outline=False, verbose=verbose, fast=fast, offload=offload)
 
@@ -830,59 +1114,105 @@ cli.add_command(join_cmd)
 
 # ── update / navakar ──────────────────────────────────────────────────────────
 
-def _update_impl(fast: bool, offload: bool, model: str | None):
-    """Scan all registered projects, regenerate those with pending changes."""
-    from . import portfolio as ptf
-    from . import tracker as trk
-    from pathlib import Path as _Path
-
-    registry = ptf._load_registry()
-    if not registry:
-        console.print("[yellow]No projects registered. Run sarathi init or join first.[/yellow]")
-        return
-
-    pending_projects = []
-    for key, info in registry.items():
-        p = _Path(info["path"])
-        if not p.exists():
-            continue
-        pending = trk.files_since_last_generated(p)
-        if pending:
-            pending_projects.append((p, pending))
-
-    if not pending_projects:
-        console.print("[green]✓ All projects are up to date.[/green]")
-        return
-
-    console.print(
-        f"[dim][sarathi][/dim] Found [bold]{len(pending_projects)}[/bold] project(s) with pending changes:"
-    )
-    for p, files in pending_projects:
-        console.print(f"  [cyan]{p.name}[/cyan] — {len(files)} file(s) changed")
+def _update_impl():
+    """Morning briefing: show what background jobs ran and what's pending."""
+    from datetime import timedelta
 
     console.print()
-    for project_dir, _ in pending_projects:
-        console.print(f"[dim]━━━ Updating [bold]{project_dir.name}[/bold] ━━━[/dim]")
-        _track_impl(str(project_dir), True, model, False, fast=fast, offload=offload)
+    console.print("[bold]Sarathi — Morning Report[/bold]")
+    console.print()
+
+    # ── Background jobs since yesterday ──────────────────────────────────────
+    since = (datetime.now() - timedelta(hours=16)).isoformat(timespec="seconds")
+    recent = _jobs.get_recent_jobs(since_iso=since, limit=20)
+
+    generated = [j for j in recent if j.get("status") == "done"]
+    failed     = [j for j in recent if j.get("status") in ("failed", "interrupted")]
+    running    = [j for j in recent if j.get("status") == "running"]
+    queued     = _jobs.get_queue()
+
+    if generated:
+        console.print(f"[green]⚡ Generated overnight[/green]")
+        for j in generated:
+            name = Path(j.get("project", "?")).name
+            ts   = j.get("started", "")[:16].replace("T", " ")
+            console.print(f"  [cyan]{name:<22}[/cyan] [dim]{ts}[/dim]")
         console.print()
+
+    if failed:
+        console.print(f"[red]✗ Failed[/red]")
+        for j in failed:
+            name = Path(j.get("project", "?")).name
+            console.print(f"  [red]{name}[/red]  → sarathi logs {j['id']}")
+        console.print()
+
+    if running:
+        console.print(f"[yellow]⚙ Still running[/yellow]")
+        for j in running:
+            name = Path(j.get("project", "?")).name
+            console.print(f"  [yellow]{name}[/yellow]")
+        console.print()
+
+    if queued:
+        console.print(f"[dim]Queue ({len(queued)} pending)[/dim]")
+        for j in queued:
+            name = Path(j.get("project", "?")).name
+            console.print(f"  [dim]{name}[/dim]")
+        console.print()
+
+    # ── Project status ────────────────────────────────────────────────────────
+    registry = ptf._load_registry()
+    pending_projects = []
+    uptodate_projects = []
+    for info in registry.values():
+        p = Path(info["path"])
+        if not p.exists():
+            continue
+        if trk.files_since_last_generated(p):
+            pending_projects.append(p)
+        else:
+            uptodate_projects.append(p)
+
+    if pending_projects:
+        console.print(f"[amber]⚠ Pending — files changed since last deck[/amber]".replace("amber", "yellow"))
+        for p in pending_projects:
+            n = len(trk.files_since_last_generated(p))
+            console.print(f"  [yellow]{p.name:<22}[/yellow] {n} file(s) changed")
+        console.print()
+
+    if uptodate_projects:
+        console.print(f"[green]✓ Up to date[/green]")
+        for p in uptodate_projects:
+            last = trk.last_generated(p)
+            ts   = last[:16].replace("T", " ") if last else "never"
+            console.print(f"  [dim]{p.name:<22}  {ts}[/dim]")
+        console.print()
+
+    if not generated and not pending_projects and not queued:
+        console.print("[dim]Nothing to report. Run sarathi viraam at the end of your session.[/dim]")
+    elif pending_projects:
+        console.print(
+            f"[dim]Run [bold]sarathi viraam --bg[/bold] to mark milestones and queue generation.[/dim]"
+        )
+
+    worker_status = "running" if _jobs.is_worker_running() else "idle"
+    console.print(f"\n[dim]Queue worker: {worker_status}[/dim]")
 
 
 @click.command("update")
-@click.option("--fast", is_flag=True, help="Use fast model for all projects.")
-@click.option("--offload", is_flag=True, help="Unload models between projects.")
-@click.option("--model", default=None, help="Override model for all projects.")
-def update_cmd(fast, offload, model):
-    """Regenerate all projects that have pending file changes. (Sanskrit: navakar)"""
-    _update_impl(fast=fast, offload=offload, model=model)
+def update_cmd():
+    """Morning briefing: show background job results and pending projects.
+
+    Run this when you sit down in the morning. It shows what generated
+    overnight, what failed, and what still needs a deck.
+    """
+    _update_impl()
 
 
 @click.command("navakar", hidden=True)
-@click.option("--fast", is_flag=True)
-@click.option("--offload", is_flag=True)
-@click.option("--model", default=None)
-def navakar_cmd(fast, offload, model):
-    """Regenerate all projects with pending changes. (navakar = renewal)"""
-    _update_impl(fast=fast, offload=offload, model=model)
+def navakar_cmd():
+    """Morning briefing — shows overnight job results. (navakar = renewal)"""
+    _update_impl()
 
 
 cli.add_command(update_cmd)
@@ -891,22 +1221,20 @@ cli.add_command(navakar_cmd)
 
 # ── viraam ────────────────────────────────────────────────────────────────────
 
-def _viraam_impl(milestone_name: str, fast: bool, offload: bool, model: str | None):
-    """End-of-session: mark a milestone on every active project, then regenerate all."""
-    from . import portfolio as ptf
-    from . import tracker as trk
-    from pathlib import Path as _Path
-    from datetime import datetime as _dt
-
-    label = milestone_name or f"session {_dt.now().strftime('%Y-%m-%d %H:%M')}"
+def _viraam_impl(milestone_name: str, fast: bool, offload: bool, model: str | None,
+                 job_id: str = ""):
+    """End-of-session: mark milestones and queue generation for pending projects."""
+    label = milestone_name or f"session {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     registry = ptf._load_registry()
 
     if not registry:
         console.print("[yellow]No projects registered.[/yellow]")
+        if job_id:
+            _jobs.update_job(job_id, status="done")
         return
 
-    active = [(k, _Path(info["path"])) for k, info in registry.items()
-              if _Path(info["path"]).exists()]
+    active = [(k, Path(info["path"])) for k, info in registry.items()
+              if Path(info["path"]).exists()]
 
     console.print(Panel(
         f"[bold cyan]viraam[/bold cyan] — end of session\n\n"
@@ -916,23 +1244,48 @@ def _viraam_impl(milestone_name: str, fast: bool, offload: bool, model: str | No
     ))
     console.print()
 
+    # Step 1: mark milestones on all projects with changes (fast, no LLM)
+    needs_generation = []
     for _, project_dir in active:
+        pending = trk.files_since_last_generated(project_dir)
         trk.init_tracker(project_dir)
-        trk.log_event(project_dir, "milestone", label=label,
-                      file_hashes=trk.snapshot_hashes(project_dir))
-        console.print(f"  [green]★[/green] {project_dir.name} — milestone marked")
+        hashes = trk.snapshot_hashes(project_dir)
+        trk.log_event(project_dir, "milestone", label=label, file_hashes=hashes)
+        if pending:
+            trk.snapshot_output_version(project_dir, label)
+            console.print(f"  [green]★[/green] {project_dir.name} — milestone + snapshot ({len(pending)} file(s) changed)")
+            needs_generation.append(project_dir)
+        else:
+            console.print(f"  [dim]★ {project_dir.name} — milestone (up to date, no regen needed)[/dim]")
 
     console.print()
-    for _, project_dir in active:
-        console.print(f"[dim]━━━ Generating [bold]{project_dir.name}[/bold] ━━━[/dim]")
-        _track_impl(str(project_dir), True, model, False, fast=fast, offload=offload)
-        console.print()
 
+    if not needs_generation:
+        console.print(Panel(
+            f"[bold green]✓ viraam complete[/bold green]\n\n"
+            f"Milestone [bold]\"{label}\"[/bold] marked on all {len(active)} project(s).\n"
+            f"All projects are up to date — no generation needed.",
+            border_style="green",
+        ))
+        return
+
+    # Step 2: enqueue generation for projects that have pending changes
+    for project_dir in needs_generation:
+        _jobs.enqueue(str(project_dir), fast=fast, model=model or "", offload=offload, label=label)
+        console.print(f"  [cyan]⚙[/cyan] {project_dir.name} — queued for generation")
+
+    # Step 3: start the queue worker if not already running
+    started = _jobs.start_worker_if_idle()
+
+    n = len(needs_generation)
+    worker_note = "Queue worker started." if started else "Worker already running — jobs added to queue."
+    console.print()
     console.print(Panel(
         f"[bold green]✓ viraam complete[/bold green]\n\n"
-        f"Milestone [bold]\"{label}\"[/bold] marked and presentations generated\n"
-        f"for all {len(active)} project(s).\n\n"
-        f"Run [cyan]sarathi portfolio[/cyan] to view everything.",
+        f"Milestone [bold]\"{label}\"[/bold] marked on all {len(active)} project(s).\n"
+        f"{n} project(s) queued for generation in background.\n\n"
+        f"{worker_note}\n"
+        f"Track progress: [cyan]sarathi jobs[/cyan]  ·  Dashboard: [cyan]sarathi portfolio[/cyan]",
         border_style="green",
     ))
 
@@ -943,16 +1296,156 @@ def _viraam_impl(milestone_name: str, fast: bool, offload: bool, model: str | No
 @click.option("--offload", is_flag=True, help="Unload models between projects.")
 @click.option("--model", default=None, help="Override model for all projects.")
 def viraam_cmd(name, fast, offload, model):
-    """End-of-session: mark a milestone on all projects, then generate all presentations.
+    """End-of-session: mark milestones, queue generation for pending projects.
 
     \b
-    viraam (Sanskrit: pause/rest) — run this at the end of your work session.
-    It will:
-      1. Mark a named milestone on every tracked project
-      2. Regenerate presentations for all projects
-      3. Open the portfolio dashboard
+    viraam (Sanskrit: pause/rest) — run at the end of your work session.
+    Milestones are marked immediately (fast).
+    Generation runs in the background queue — one project at a time.
+    Check progress tomorrow morning with: sarathi update
     """
     _viraam_impl(milestone_name=name, fast=fast, offload=offload, model=model)
 
 
 cli.add_command(viraam_cmd)
+
+
+# ── Queue worker (hidden internal command) ────────────────────────────────────
+
+@click.command("_worker", hidden=True)
+def worker_cmd():
+    """Internal: drain the generation queue one project at a time."""
+    import os as _os
+    _jobs._write_worker_pid(_os.getpid())
+    console = Console(stderr=True)  # log to stderr so it goes to the log file
+
+    console.print(f"[dim][worker] Queue worker started (PID {_os.getpid()})[/dim]")
+
+    try:
+        while True:
+            job = _jobs.dequeue()
+            if not job:
+                console.print("[dim][worker] Queue empty — exiting.[/dim]")
+                break
+
+            project_dir = job.get("project", "")
+            if not project_dir or not Path(project_dir).exists():
+                _jobs.finish_queued(job["id"], status="failed")
+                console.print(f"[red][worker] Project not found: {project_dir}[/red]")
+                continue
+
+            console.print(f"[dim][worker] Generating: {Path(project_dir).name}[/dim]")
+            _jobs.update_job(job["id"], status="running", pid=_os.getpid(),
+                             started=datetime.now().isoformat(timespec="seconds"))
+
+            try:
+                _track_impl(
+                    project_dir, once=True, model=job.get("model") or None,
+                    edit_outline=False, fast=bool(job.get("fast")),
+                    offload=bool(job.get("offload")),
+                )
+                _jobs.finish_queued(job["id"], status="done")
+                console.print(f"[green][worker] Done: {Path(project_dir).name}[/green]")
+            except Exception as exc:
+                _jobs.finish_queued(job["id"], status="failed")
+                console.print(f"[red][worker] Failed {Path(project_dir).name}: {exc}[/red]")
+    finally:
+        _jobs.clear_worker_pid()
+        console.print("[dim][worker] Worker exiting.[/dim]")
+
+
+cli.add_command(worker_cmd)
+
+
+# ── jobs / logs / kill ────────────────────────────────────────────────────────
+
+@click.command("jobs")
+@click.option("--all", "show_all", is_flag=True, help="Show full history, not just recent.")
+def jobs_cmd(show_all):
+    """Show background job queue and recent job history."""
+    from rich.table import Table as _Table
+
+    queue = _jobs.get_queue()
+    recent = _jobs.get_all_jobs(limit=20) if show_all else _jobs.get_recent_jobs(limit=15)
+
+    worker_status = "[green]running[/green]" if _jobs.is_worker_running() else "[dim]idle[/dim]"
+    console.print(f"\n[bold]Sarathi — Background Jobs[/bold]   worker: {worker_status}\n")
+
+    if queue:
+        t = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+        t.add_column("QUEUE", style="cyan", no_wrap=True)
+        t.add_column("Project")
+        t.add_column("Status")
+        t.add_column("Queued at")
+        for j in queue:
+            name = Path(j.get("project", "?")).name
+            t.add_row(j["id"][-12:], name, j.get("status", "?"),
+                      j.get("queued_at", "")[:16].replace("T", " "))
+        console.print(t)
+        console.print()
+
+    if recent:
+        t = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+        t.add_column("ID", style="dim", no_wrap=True)
+        t.add_column("Project")
+        t.add_column("Status")
+        t.add_column("Started")
+        for j in reversed(recent[-15:]):
+            name = Path(j.get("project", "?")).name
+            status = j.get("status", "?")
+            color = "green" if status == "done" else "red" if status in ("failed","interrupted") else "yellow"
+            ts = j.get("started", j.get("queued_at", ""))[:16].replace("T", " ")
+            t.add_row(j["id"][-16:], name, f"[{color}]{status}[/{color}]", ts)
+        console.print(t)
+
+    if not queue and not recent:
+        console.print("[dim]No jobs yet. Run sarathi viraam to queue generation.[/dim]")
+
+    console.print()
+    console.print("[dim]sarathi logs <job-id>   — tail job log[/dim]")
+    console.print("[dim]sarathi kill <job-id>   — stop a job[/dim]")
+    console.print("[dim]sarathi kill --worker   — stop the queue worker[/dim]")
+
+
+cli.add_command(jobs_cmd)
+
+
+@click.command("logs")
+@click.argument("job_id")
+@click.option("--lines", default=50, help="Number of log lines to show.")
+def logs_cmd(job_id, lines):
+    """Tail the log for a background job."""
+    text = _jobs.tail_log(job_id, lines=lines)
+    console.print(f"[dim]── log: {job_id} ──[/dim]")
+    console.print(text)
+
+
+cli.add_command(logs_cmd)
+
+
+@click.command("kill")
+@click.argument("job_id", required=False, default=None)
+@click.option("--worker", is_flag=True, help="Stop the queue worker process.")
+@click.option("--all", "kill_all", is_flag=True, help="Stop all running jobs and the worker.")
+def kill_cmd(job_id, worker, kill_all):
+    """Stop a background job, the queue worker, or everything."""
+    if kill_all:
+        stopped = _jobs.kill_worker()
+        console.print(f"[yellow]Worker {'stopped' if stopped else 'was not running'}.[/yellow]")
+        for j in _jobs.get_all_jobs():
+            if j.get("status") == "running":
+                _jobs.kill_job(j["id"])
+                console.print(f"[yellow]Stopped job {j['id'][-12:]}[/yellow]")
+        return
+    if worker:
+        stopped = _jobs.kill_worker()
+        console.print(f"[yellow]Worker {'stopped' if stopped else 'was not running'}.[/yellow]")
+        return
+    if job_id:
+        ok = _jobs.kill_job(job_id)
+        console.print(f"[yellow]Job {job_id}: {'stopped' if ok else 'not found or not running'}.[/yellow]")
+        return
+    console.print("[yellow]Specify a job ID, --worker, or --all.[/yellow]")
+
+
+cli.add_command(kill_cmd)

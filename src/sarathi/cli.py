@@ -99,9 +99,10 @@ def _add(english_cmd, sanskrit_cmd):
 
 def _resolve_folder(name_or_path: str) -> str:
     """Resolve a project name or path to an absolute folder path."""
-    p = Path(name_or_path)
+    import os as _os
+    p = Path(_os.path.abspath(name_or_path))
     if p.exists():
-        return str(p.resolve())
+        return str(p)
     registry = ptf._load_registry()
     needle = name_or_path.strip().lower()
     for key, info in registry.items():

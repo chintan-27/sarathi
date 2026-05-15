@@ -9,11 +9,23 @@ Works across ML experiments, software development, and data analysis projects, w
 ## Install
 
 ```bash
+# From GitHub (recommended)
 pipx install git+https://github.com/chintan-27/sarathi.git
+
+# From a local clone (development)
+pipx install --editable /path/to/sarathi
+
 sarathi setup
 ```
 
 `sarathi setup` detects your hardware, benchmarks local models, assigns Planner / Coder / Vision / Fast roles, and installs Playwright for PDF export.
+
+> **After installing with pipx**, Playwright's browser must be installed once:
+> ```bash
+> sarathi setup   # handles this automatically
+> # or manually:
+> ~/.local/share/pipx/venvs/sarathi/bin/playwright install chromium
+> ```
 
 ---
 

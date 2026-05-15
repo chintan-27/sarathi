@@ -375,7 +375,7 @@ cli.add_command(arambh_cmd)
 def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
                 verbose: bool = False, fast: bool = False, offload: bool = False,
                 job_id: str = ""):
-    project_dir = Path(folder).resolve()
+    project_dir = Path(folder)
     meta_path = project_dir / "project.json"
 
     if not meta_path.exists():
@@ -634,7 +634,7 @@ cli.add_command(bana_cmd)
 # ── mark / chinh ──────────────────────────────────────────────────────────────
 
 def _mark_impl(folder: str, name: str):
-    project_dir = Path(folder).resolve()
+    project_dir = Path(folder)
     trk.init_tracker(project_dir)
     hashes = trk.snapshot_hashes(project_dir)
     trk.log_event(project_dir, "milestone", label=name, file_hashes=hashes)
@@ -682,7 +682,7 @@ cli.add_command(padav_cmd)
 # ── log / itihas ──────────────────────────────────────────────────────────────
 
 def _log_impl(folder: str):
-    project_dir = Path(folder).resolve()
+    project_dir = Path(folder)
     events = trk.get_timeline(project_dir)
     if not events:
         console.print("[yellow]No timeline events yet.[/yellow]")
@@ -749,7 +749,7 @@ cli.add_command(safar_cmd)
 # ── status / sthiti ───────────────────────────────────────────────────────────
 
 def _status_impl(folder: str):
-    project_dir = Path(folder).resolve()
+    project_dir = Path(folder)
     meta_path = project_dir / "project.json"
     if not meta_path.exists():
         console.print("[red]No project.json found. Run sarathi init first.[/red]")
@@ -797,7 +797,7 @@ cli.add_command(haal_cmd)
 # ── open / darshan ────────────────────────────────────────────────────────────
 
 def _open_impl(folder: str):
-    project_dir = Path(folder).resolve()
+    project_dir = Path(folder)
     html = project_dir / "output" / "presentation.html"
     if not html.exists():
         console.print("[red]No presentation.html found. Run sarathi make first.[/red]")
@@ -834,7 +834,7 @@ cli.add_command(dekh_cmd)
 def clean_cmd(folder, yes):
     """Delete output/ and .sarathi/viz/ to force a clean regeneration."""
     folder = _resolve_folder(folder)
-    project_dir = Path(folder).resolve()
+    project_dir = Path(folder)
     targets = [project_dir / "output", project_dir / ".sarathi" / "viz"]
     if not yes:
         click.confirm(
@@ -937,7 +937,7 @@ THEMES = ["dark-gradient", "dracula", "light", "minimal"]
 def theme_cmd(folder, theme_name):
     """Set the presentation theme for a project."""
     folder = _resolve_folder(folder)
-    project_dir = Path(folder).resolve()
+    project_dir = Path(folder)
     trk.init_tracker(project_dir)
     cfg.save_project_config(project_dir, {"theme": theme_name})
     console.print(f"[green]Theme set to [bold]{theme_name}[/bold].[/green]")
@@ -956,7 +956,7 @@ def export_cmd(folder, fmt):
     """Re-export the presentation without re-generating."""
     folder = _resolve_folder(folder)
     import shutil
-    project_dir = Path(folder).resolve()
+    project_dir = Path(folder)
     html_src = project_dir / "output" / "presentation.html"
     pdf_src = project_dir / "output" / "presentation.pdf"
     name = json.loads((project_dir / "project.json").read_text())["name"]
@@ -992,7 +992,7 @@ cli.add_command(export_cmd)
 # ── diff / antar ──────────────────────────────────────────────────────────────
 
 def _diff_impl(folder: str, from_label: str, to_label: str, model: str | None):
-    project_dir = Path(folder).resolve()
+    project_dir = Path(folder)
     meta = json.loads((project_dir / "project.json").read_text())
     project_cfg = cfg.load_project_config(project_dir)
     effective_model = model or meta.get("model") or project_cfg["model"]
@@ -1148,7 +1148,7 @@ def join_cmd(folder, model, once, fast, offload, verbose, bg):
     and build a presentation that tells the story of where the project is now.
     """
     folder = _resolve_folder(folder)
-    project_dir = Path(folder).resolve()
+    project_dir = Path(folder)
 
     # Auto-create project.json if missing (joining a non-sarathi project)
     meta_path = project_dir / "project.json"
@@ -1168,7 +1168,7 @@ def join_cmd(folder, model, once, fast, offload, verbose, bg):
         console.print()
 
     if bg:
-        project_dir = Path(folder).resolve()
+        project_dir = Path(folder)
         _jobs.enqueue(str(project_dir), fast=fast, model=model or "", offload=offload, label="join")
         started = _jobs.start_worker_if_idle()
         console.print(

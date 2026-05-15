@@ -81,10 +81,10 @@ def cli():
 
     \b
     Sanskrit aliases (same command, different name):
-      arambh  = init        yatra = join      padav  = mark
-      bana    = make        safar = track     viraam = viraam (no alias needed)
-      haal    = status      dekh  = portfolio antar  = diff
-      suchi   = ls
+      arambh  = init        yatra   = join      padav   = mark
+      bana    = make        safar   = track     viraam  = viraam (no alias needed)
+      haal    = status      dekh    = portfolio antar   = diff
+      suchi   = ls          vivaran = info
 
     Run any command with --help for details.
     """
@@ -1116,6 +1116,104 @@ def setup_cmd():
 
 
 cli.add_command(setup_cmd)
+
+
+# ── info / vivaran ────────────────────────────────────────────────────────────
+
+@click.command("info")
+def info_cmd():
+    """Show current Sarathi setup — models, Ollama, projects, paths."""
+    from rich.rule import Rule
+    from importlib.metadata import version as _pkg_version
+
+    try:
+        ver = _pkg_version("sarathi")
+    except Exception:
+        ver = "dev"
+
+    _gcfg_path = Path.home() / ".config" / "sarathi" / "config.json"
+    pcfg = {**cfg.DEFAULTS, **(json.loads(_gcfg_path.read_text()) if _gcfg_path.exists() else {})}
+
+    # ── Ollama ────────────────────────────────────────────────────────────────
+    ollama_ok = False
+    loaded_model = None
+    available: list[str] = []
+    try:
+        import ollama as _ol
+        available = [m.model for m in _ol.list().models]
+        ps = _ol.ps()
+        loaded = getattr(ps, "models", []) or []
+        if loaded:
+            loaded_model = getattr(loaded[0], "model", None)
+        ollama_ok = True
+    except Exception:
+        pass
+
+    # ── Projects ──────────────────────────────────────────────────────────────
+    registry = ptf._load_registry()
+    n_projects = len(registry)
+
+    # ── Jobs ──────────────────────────────────────────────────────────────────
+    worker_up = _jobs.is_worker_running()
+    queue_len  = _jobs.queue_length()
+
+    # ── Paths ─────────────────────────────────────────────────────────────────
+    config_dir = Path.home() / ".config" / "sarathi"
+    config_file = config_dir / "config.json"
+
+    console.print()
+    console.print(Rule("[bold]Sarathi — vivaran[/bold]", style="cyan"))
+    console.print()
+
+    # Version + paths
+    console.print(f"  [bold cyan]Version[/bold cyan]      sarathi {ver}")
+    console.print(f"  [bold cyan]Config[/bold cyan]       {config_file}")
+    console.print(f"  [bold cyan]Logs[/bold cyan]         {config_dir / 'logs'}")
+    console.print()
+
+    # Models
+    console.print(f"  [bold cyan]Models[/bold cyan]")
+    roles = [
+        ("Planner",  pcfg.get("planner_model") or pcfg.get("model") or "—"),
+        ("Coder",    pcfg.get("coder_model")   or pcfg.get("model") or "—"),
+        ("Vision",   pcfg.get("vision_model")  or "—"),
+        ("Fast",     pcfg.get("fast_model")    or "—"),
+    ]
+    # Normalize: strip :latest so "qwen3.5" matches "qwen3.5:latest"
+    avail_norm = {m.split(":")[0] if m.endswith(":latest") else m for m in available}
+    for role, model in roles:
+        model_norm = model.split(":")[0] if model.endswith(":latest") else model
+        pulled = model in available or model_norm in avail_norm
+        in_ol = "  [green]✓[/green]" if pulled else "  [dim]not pulled[/dim]"
+        console.print(f"    [dim]{role:<10}[/dim] {model}{in_ol}")
+    console.print()
+
+    # Ollama
+    dot = "[green]●[/green]" if ollama_ok else "[red]●[/red]"
+    status_str = "running" if ollama_ok else "not reachable"
+    console.print(f"  [bold cyan]Ollama[/bold cyan]       {dot} {status_str}")
+    if loaded_model:
+        console.print(f"  [bold cyan]Loaded[/bold cyan]       {loaded_model}")
+    console.print(f"  [bold cyan]Available[/bold cyan]    {len(available)} model(s) pulled")
+    console.print()
+
+    # Projects + queue
+    console.print(f"  [bold cyan]Projects[/bold cyan]     {n_projects} tracked")
+    worker_str = "[green]running[/green]" if worker_up else "[dim]idle[/dim]"
+    console.print(f"  [bold cyan]Worker[/bold cyan]       {worker_str}  ·  {queue_len} queued")
+    console.print()
+
+
+cli.add_command(info_cmd)
+
+
+@click.command("vivaran", hidden=True)
+def vivaran_cmd():
+    """Show current Sarathi setup. (vivaran = details/description)"""
+    info_cmd.callback()
+
+
+cli.add_command(vivaran_cmd)
 
 
 # ── join ──────────────────────────────────────────────────────────────────────

@@ -508,7 +508,7 @@ def _project_summary(project_dir: Path) -> dict:
         "best_tok_s":     bests.get("best_tok_s"),
         "fastest_s":      bests.get("fastest_s"),
         "largest_slides": bests.get("largest_slides"),
-        "status":         status,
+        "gen_status":     status,
         "pid_info":       pid_info,
     }
 

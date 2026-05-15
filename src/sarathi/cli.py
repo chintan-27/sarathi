@@ -1072,7 +1072,9 @@ cli.add_command(setup_cmd)
               help="Unload all Ollama models from RAM before generating.")
 @click.option("--verbose", "-v", is_flag=True,
               help="Print every prompt and raw LLM response.")
-def join_cmd(folder, model, once, fast, offload, verbose):
+@click.option("--bg", is_flag=True,
+              help="Queue generation in background after setup — returns immediately.")
+def join_cmd(folder, model, once, fast, offload, verbose, bg):
     """Join an existing project — reads git history and local changes as context.
 
     \b
@@ -1106,6 +1108,16 @@ def join_cmd(folder, model, once, fast, offload, verbose):
         _print_init_summary(meta, project_dir)
         console.print()
 
+    if bg:
+        project_dir = Path(folder).resolve()
+        _jobs.enqueue(str(project_dir), fast=fast, model=model or "", offload=offload, label="join")
+        started = _jobs.start_worker_if_idle()
+        console.print(
+            f"\n[green]⚙  Generation queued in background.[/green]\n"
+            f"[dim]  sarathi jobs      — check progress\n"
+            f"  sarathi portfolio — live dashboard[/dim]"
+        )
+        return
     _track_impl(folder, once, model, edit_outline=False, verbose=verbose, fast=fast, offload=offload)
 
 

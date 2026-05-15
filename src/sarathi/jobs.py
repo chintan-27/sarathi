@@ -82,7 +82,6 @@ def dequeue() -> dict | None:
     if not pending:
         return None
     job = pending[0]
-    # Mark as running in queue file
     for j in queue:
         if j["id"] == job["id"]:
             j["status"] = "running"
@@ -163,10 +162,7 @@ def clear_worker_pid() -> None:
 
 
 def start_worker_if_idle() -> bool:
-    """Spawn the queue worker if it's not already running.
-
-    Returns True if a new worker was started.
-    """
+    """Spawn the queue worker if it's not already running. Returns True if started."""
     if is_worker_running():
         return False
     if queue_length() == 0:
@@ -177,7 +173,7 @@ def start_worker_if_idle() -> bool:
     _ensure_dirs()
     log_fh = open(log_path, "w", encoding="utf-8")
     proc = subprocess.Popen(
-        [exe, "_worker"],
+        [exe, "_worker", "--worker-log", log_path],
         stdout=log_fh,
         stderr=subprocess.STDOUT,
         stdin=subprocess.DEVNULL,
@@ -188,17 +184,67 @@ def start_worker_if_idle() -> bool:
     return True
 
 
+# ── Direct spawn (for long-running commands like track) ──────────────────────
+
+def new_job(command: str, label: str = "", **meta) -> dict:
+    """Create a job record for a directly-spawned background process (not queued)."""
+    _ensure_dirs()
+    job_id = f"{command}-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')[:24]}"
+    job = {
+        "id":        job_id,
+        "command":   command,
+        "label":     label,
+        "queued_at": datetime.now().isoformat(timespec="seconds"),
+        "status":    "starting",
+        "log":       str(_LOGS_DIR / f"{job_id}.log"),
+        **meta,
+    }
+    _append_job(job)
+    return job
+
+
+def spawn(cli_args: list[str], log_path: str) -> "subprocess.Popen[bytes]":
+    """Spawn `sarathi <cli_args>` in the background, redirecting output to log_path."""
+    _ensure_dirs()
+    exe = shutil.which("sarathi") or sys.argv[0]
+    log_fh = open(log_path, "w", encoding="utf-8")
+    return subprocess.Popen(
+        [exe] + cli_args,
+        stdout=log_fh,
+        stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,
+        close_fds=True,
+    )
+
+
 # ── Reporting ─────────────────────────────────────────────────────────────────
 
-def tail_log(job_id: str, lines: int = 40) -> str:
-    for j in get_all_jobs():
-        if j["id"] == job_id:
-            p = Path(j.get("log", ""))
-            if p.exists():
-                text = p.read_text(encoding="utf-8", errors="replace")
-                return "\n".join(text.splitlines()[-lines:])
-            return "(no log yet)"
-    return f"Job {job_id!r} not found."
+def resolve_job(job_ref: str) -> dict | None:
+    """Resolve a job by ID, ID suffix, or project name (returns most recent match)."""
+    all_jobs = get_all_jobs()
+    for j in reversed(all_jobs):
+        if j["id"] == job_ref:
+            return j
+    for j in reversed(all_jobs):
+        if j["id"].endswith(job_ref):
+            return j
+    for j in reversed(all_jobs):
+        proj = j.get("project", "")
+        if proj and (Path(proj).name == job_ref or Path(proj).name.startswith(job_ref)):
+            return j
+    return None
+
+
+def tail_log(job_ref: str, lines: int = 40) -> str:
+    j = resolve_job(job_ref)
+    if j is None:
+        return f"Job {job_ref!r} not found."
+    p = Path(j.get("log", ""))
+    if p.exists():
+        text = p.read_text(encoding="utf-8", errors="replace")
+        return "\n".join(text.splitlines()[-lines:])
+    return "(no log yet)"
 
 
 def kill_job(job_id: str) -> bool:

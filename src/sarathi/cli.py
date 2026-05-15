@@ -69,24 +69,55 @@ def cli():
     Quick start:
       sarathi setup                          first-time setup
       sarathi init "name" "description"      create a new project
-      sarathi join <folder>/                 join an existing project (reads git history)
-      sarathi track <folder>/                watch + auto-generate on file changes
-      sarathi mark <folder>/ --name "v1"     plant a milestone
+      sarathi join <name or folder>/         join an existing project (reads git history)
+      sarathi ls                             list all tracked projects
+      sarathi track <name or folder>/        watch + auto-generate on file changes
+      sarathi mark <name or folder>/ --name "v1"  plant a milestone
       sarathi viraam                         end-of-session: mark + generate all projects
-      sarathi update                         regenerate all projects with pending changes
+      sarathi update                         morning briefing + pending changes
+      sarathi jobs                           background job queue
+      sarathi logs <id or name>              tail a job log
       sarathi portfolio                      dashboard at localhost:7432
 
     \b
-    Sanskrit aliases work too: arambh, yatra, bana, padav, safar, haal, dekh, antar.
+    Sanskrit aliases (same command, different name):
+      arambh  = init        yatra = join      padav  = mark
+      bana    = make        safar = track     viraam = viraam (no alias needed)
+      haal    = status      dekh  = portfolio antar  = diff
+      suchi   = ls
+
     Run any command with --help for details.
     """
 
 
-# ── helper to register dual-named commands ────────────────────────────────────
+# ── helpers ───────────────────────────────────────────────────────────────────
 
 def _add(english_cmd, sanskrit_cmd):
     cli.add_command(english_cmd)
     cli.add_command(sanskrit_cmd)
+
+
+def _resolve_folder(name_or_path: str) -> str:
+    """Resolve a project name or path to an absolute folder path."""
+    p = Path(name_or_path)
+    if p.exists():
+        return str(p.resolve())
+    registry = ptf._load_registry()
+    needle = name_or_path.strip().lower()
+    for key, info in registry.items():
+        reg_name = (info.get("name") or "").lower()
+        reg_base = Path(key).name.lower()
+        if reg_name == needle or reg_base == needle or key == name_or_path:
+            resolved = Path(key)
+            if resolved.exists():
+                return str(resolved)
+            console.print(f"[red]Project '{info.get('name', key)}' is registered but its folder no longer exists:[/red] {key}")
+            raise SystemExit(1)
+    console.print(
+        f"[red]Cannot find project '{name_or_path}'.[/red]\n"
+        f"  Use a folder path or a project name from [bold]sarathi ls[/bold]."
+    )
+    raise SystemExit(1)
 
 
 # ── init / arambh ─────────────────────────────────────────────────────────────
@@ -495,7 +526,7 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
 
 
 @click.command("track")
-@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.argument("folder", type=str)
 @click.option("--once", is_flag=True, help="Generate once and exit.")
 @click.option("--model", default=None, help="Override the Ollama model.")
 @click.option("--edit-outline", is_flag=True,
@@ -511,6 +542,7 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
 @click.option("--_job-id", "job_id", default="", hidden=True)
 def track_cmd(folder, once, model, edit_outline, fast, offload, verbose, bg, job_id):
     """Watch a project folder and regenerate on every file change."""
+    folder = _resolve_folder(folder)
     if bg:
         args = ["track", folder]
         if once:         args += ["--once"]
@@ -525,7 +557,7 @@ def track_cmd(folder, once, model, edit_outline, fast, offload, verbose, bg, job
 
 
 @click.command("yatra", hidden=True)
-@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.argument("folder", type=str)
 @click.option("--once", is_flag=True)
 @click.option("--model", default=None)
 @click.option("--edit-outline", is_flag=True)
@@ -535,23 +567,20 @@ def track_cmd(folder, once, model, edit_outline, fast, offload, verbose, bg, job
 @click.option("--bg", is_flag=True)
 @click.option("--_job-id", "job_id", default="", hidden=True)
 def yatra_cmd(folder, once, model, edit_outline, fast, offload, verbose, bg, job_id):
-    """Watch a project folder and regenerate on every file change. (yatra = journey)"""
-    if bg:
-        args = ["yatra", folder] + (["--once"] if once else []) + (["--fast"] if fast else [])
-        _spawn_bg("track", args, label=folder, meta={"project": folder})
-        return
-    _track_impl(folder, once, model, edit_outline, verbose=verbose,
-                fast=fast, offload=offload, job_id=job_id)
+    """Join an existing project and generate a presentation. (yatra = journey)"""
+    folder = _resolve_folder(folder)
+    join_cmd.callback(folder=folder, model=model, once=once, fast=fast,
+                      offload=offload, verbose=verbose, bg=bg)
 
 
 cli.add_command(track_cmd)
 cli.add_command(yatra_cmd)
 
 
-# ── make / rachna ─────────────────────────────────────────────────────────────
+# ── make / bana ───────────────────────────────────────────────────────────────
 
 @click.command("make")
-@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.argument("folder", type=str)
 @click.option("--model", default=None, help="Override the Ollama model.")
 @click.option("--edit-outline", is_flag=True)
 @click.option("--fast", is_flag=True,
@@ -565,6 +594,7 @@ cli.add_command(yatra_cmd)
 @click.option("--_job-id", "job_id", default="", hidden=True)
 def make_cmd(folder, model, edit_outline, fast, offload, verbose, bg, job_id):
     """Generate a presentation once and exit (no watching)."""
+    folder = _resolve_folder(folder)
     if bg:
         args = ["make", folder, "--once"]
         if model:        args += ["--model", model]
@@ -577,7 +607,7 @@ def make_cmd(folder, model, edit_outline, fast, offload, verbose, bg, job_id):
 
 
 @click.command("bana", hidden=True)
-@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.argument("folder", type=str)
 @click.option("--model", default=None)
 @click.option("--edit-outline", is_flag=True)
 @click.option("--fast", is_flag=True)
@@ -587,6 +617,7 @@ def make_cmd(folder, model, edit_outline, fast, offload, verbose, bg, job_id):
 @click.option("--_job-id", "job_id", default="", hidden=True)
 def bana_cmd(folder, model, edit_outline, fast, offload, verbose, bg, job_id):
     """Generate a presentation once and exit. (bana = build)"""
+    folder = _resolve_folder(folder)
     if bg:
         _spawn_bg("make", ["bana", folder] + (["--fast"] if fast else []),
                   label=folder, meta={"project": folder})
@@ -623,21 +654,23 @@ def _mark_impl(folder: str, name: str):
 
 
 @click.command("mark")
-@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.argument("folder", type=str)
 @click.option("--name", required=True, help="Milestone label.")
 def mark_cmd(folder, name):
     """Plant a named milestone in the project timeline.
 
     Snapshots the current file state so you can diff or regenerate at this point later.
     """
+    folder = _resolve_folder(folder)
     _mark_impl(folder, name)
 
 
 @click.command("padav", hidden=True)
-@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.argument("folder", type=str)
 @click.option("--name", required=True, help="Milestone label.")
 def padav_cmd(folder, name):
     """Plant a named milestone in the timeline. (padav = waypoint)"""
+    folder = _resolve_folder(folder)
     _mark_impl(folder, name)
 
 
@@ -680,17 +713,32 @@ def _log_impl(folder: str):
 
 
 @click.command("log")
-@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.argument("folder", type=str)
 def log_cmd(folder):
     """Print the full project timeline — file events, checkpoints, and milestones."""
+    folder = _resolve_folder(folder)
     _log_impl(folder)
 
 
 @click.command("safar", hidden=True)
-@click.argument("folder", type=click.Path(exists=True, file_okay=False))
-def safar_cmd(folder):
-    """Print the full project timeline. (safar = travelogue)"""
-    _log_impl(folder)
+@click.argument("folder", type=str)
+@click.option("--once", is_flag=True)
+@click.option("--model", default=None)
+@click.option("--edit-outline", is_flag=True)
+@click.option("--fast", is_flag=True)
+@click.option("--offload", is_flag=True)
+@click.option("--verbose", "-v", is_flag=True)
+@click.option("--bg", is_flag=True)
+@click.option("--_job-id", "job_id", default="", hidden=True)
+def safar_cmd(folder, once, model, edit_outline, fast, offload, verbose, bg, job_id):
+    """Watch a project folder and regenerate on every file change. (safar = journey/travel)"""
+    folder = _resolve_folder(folder)
+    if bg:
+        args = ["safar", folder] + (["--once"] if once else []) + (["--fast"] if fast else [])
+        _spawn_bg("track", args, label=folder, meta={"project": folder})
+        return
+    _track_impl(folder, once, model, edit_outline, verbose=verbose,
+                fast=fast, offload=offload, job_id=job_id)
 
 
 cli.add_command(log_cmd)
@@ -726,16 +774,18 @@ def _status_impl(folder: str):
 
 
 @click.command("status")
-@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.argument("folder", type=str)
 def status_cmd(folder):
     """Show model, theme, last generation time, and files changed since then."""
+    folder = _resolve_folder(folder)
     _status_impl(folder)
 
 
 @click.command("haal", hidden=True)
-@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.argument("folder", type=str)
 def haal_cmd(folder):
     """Show current project state. (haal = current state)"""
+    folder = _resolve_folder(folder)
     _status_impl(folder)
 
 
@@ -749,24 +799,26 @@ def _open_impl(folder: str):
     project_dir = Path(folder).resolve()
     html = project_dir / "output" / "presentation.html"
     if not html.exists():
-        console.print("[red]No presentation.html found. Run sarathi rachna first.[/red]")
+        console.print("[red]No presentation.html found. Run sarathi make first.[/red]")
         raise SystemExit(1)
     webbrowser.open(html.as_uri())
     console.print(f"[green]Opened {html}[/green]")
 
 
 @click.command("open")
-@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.argument("folder", type=str)
 def open_cmd(folder):
     """Open output/presentation.html in the default browser."""
+    folder = _resolve_folder(folder)
     _open_impl(folder)
 
 
 @click.command("dekh", hidden=True)
-@click.argument("folder", type=click.Path(exists=True, file_okay=False))
-def dekh_cmd(folder):
-    """Open the presentation in browser. (dekh = look/see)"""
-    _open_impl(folder)
+@click.option("--port", default=7432)
+@click.option("--dir", "extra_dirs", multiple=True)
+def dekh_cmd(port, extra_dirs):
+    """Launch the portfolio dashboard. (dekh = look/see)"""
+    portfolio_cmd.callback(port=port, extra_dirs=extra_dirs)
 
 
 cli.add_command(open_cmd)
@@ -776,10 +828,11 @@ cli.add_command(dekh_cmd)
 # ── clean ─────────────────────────────────────────────────────────────────────
 
 @click.command("clean")
-@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.argument("folder", type=str)
 @click.option("--yes", is_flag=True, help="Skip confirmation.")
 def clean_cmd(folder, yes):
     """Delete output/ and .sarathi/viz/ to force a clean regeneration."""
+    folder = _resolve_folder(folder)
     project_dir = Path(folder).resolve()
     targets = [project_dir / "output", project_dir / ".sarathi" / "viz"]
     if not yes:
@@ -877,11 +930,12 @@ THEMES = ["dark-gradient", "dracula", "light", "minimal"]
 
 
 @click.command("theme")
-@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.argument("folder", type=str)
 @click.option("--set", "theme_name", type=click.Choice(THEMES), required=True,
               help="Theme name.")
 def theme_cmd(folder, theme_name):
     """Set the presentation theme for a project."""
+    folder = _resolve_folder(folder)
     project_dir = Path(folder).resolve()
     trk.init_tracker(project_dir)
     cfg.save_project_config(project_dir, {"theme": theme_name})
@@ -894,11 +948,12 @@ cli.add_command(theme_cmd)
 # ── export ────────────────────────────────────────────────────────────────────
 
 @click.command("export")
-@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.argument("folder", type=str)
 @click.option("--format", "fmt", type=click.Choice(["html", "pdf", "zip"]),
               default="pdf", show_default=True)
 def export_cmd(folder, fmt):
     """Re-export the presentation without re-generating."""
+    folder = _resolve_folder(folder)
     import shutil
     project_dir = Path(folder).resolve()
     html_src = project_dir / "output" / "presentation.html"
@@ -907,7 +962,7 @@ def export_cmd(folder, fmt):
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     if not html_src.exists():
-        console.print("[red]No presentation.html found. Run sarathi rachna first.[/red]")
+        console.print("[red]No presentation.html found. Run sarathi make first.[/red]")
         raise SystemExit(1)
 
     if fmt == "html":
@@ -985,22 +1040,24 @@ def _diff_impl(folder: str, from_label: str, to_label: str, model: str | None):
 
 
 @click.command("diff")
-@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.argument("folder", type=str)
 @click.option("--from", "from_label", required=True, help="Starting milestone label.")
 @click.option("--to", "to_label", required=True, help="Ending milestone label.")
 @click.option("--model", default=None)
 def diff_cmd(folder, from_label, to_label, model):
     """Generate a "what changed" presentation between two milestones."""
+    folder = _resolve_folder(folder)
     _diff_impl(folder, from_label, to_label, model)
 
 
 @click.command("antar", hidden=True)
-@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.argument("folder", type=str)
 @click.option("--from", "from_label", required=True, help="Starting milestone label.")
 @click.option("--to", "to_label", required=True, help="Ending milestone label.")
 @click.option("--model", default=None)
 def antar_cmd(folder, from_label, to_label, model):
     """Generate a progress presentation between two milestones. (antar = difference)"""
+    folder = _resolve_folder(folder)
     _diff_impl(folder, from_label, to_label, model)
 
 
@@ -1063,7 +1120,7 @@ cli.add_command(setup_cmd)
 # ── join ──────────────────────────────────────────────────────────────────────
 
 @click.command("join")
-@click.argument("folder", type=click.Path(exists=True, file_okay=False))
+@click.argument("folder", type=str)
 @click.option("--model", default=None, help="Override the Ollama model.")
 @click.option("--once", is_flag=True, help="Generate once and exit.")
 @click.option("--fast", is_flag=True,
@@ -1089,6 +1146,7 @@ def join_cmd(folder, model, once, fast, offload, verbose, bg):
       - all result files (images, CSVs, notes, code)
     and build a presentation that tells the story of where the project is now.
     """
+    folder = _resolve_folder(folder)
     project_dir = Path(folder).resolve()
 
     # Auto-create project.json if missing (joining a non-sarathi project)
@@ -1325,7 +1383,8 @@ cli.add_command(viraam_cmd)
 # ── Queue worker (hidden internal command) ────────────────────────────────────
 
 @click.command("_worker", hidden=True)
-def worker_cmd():
+@click.option("--worker-log", default="", help="Path to this worker's log file.")
+def worker_cmd(worker_log):
     """Internal: drain the generation queue one project at a time."""
     import os as _os
     _jobs._write_worker_pid(_os.getpid())
@@ -1348,7 +1407,8 @@ def worker_cmd():
 
             console.print(f"[dim][worker] Generating: {Path(project_dir).name}[/dim]")
             _jobs.update_job(job["id"], status="running", pid=_os.getpid(),
-                             started=datetime.now().isoformat(timespec="seconds"))
+                             started=datetime.now().isoformat(timespec="seconds"),
+                             **({"log": worker_log} if worker_log else {}))
 
             try:
                 _track_impl(
@@ -1422,13 +1482,115 @@ def jobs_cmd(show_all):
 cli.add_command(jobs_cmd)
 
 
+# ── ls / suchi ────────────────────────────────────────────────────────────────
+
+@click.command("ls")
+def ls_cmd():
+    """List all tracked projects with their current status."""
+    registry = ptf._load_registry()
+    if not registry:
+        console.print("[dim]No projects tracked yet. Run [bold]sarathi init[/bold] or [bold]sarathi join[/bold].[/dim]")
+        return
+
+    t = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    t.add_column("Name", style="bold")
+    t.add_column("Domain", style="dim")
+    t.add_column("Status")
+    t.add_column("Last gen")
+    t.add_column("Slides", justify="right")
+    t.add_column("Pending", justify="right")
+    t.add_column("Path", style="dim")
+
+    for info in registry.values():
+        p = Path(info["path"])
+        if not p.exists():
+            t.add_row(info.get("name", p.name), "—", "[dim]missing[/dim]", "—", "—", "—", str(p))
+            continue
+        try:
+            s = ptf._project_summary(p)
+        except Exception:
+            t.add_row(info.get("name", p.name), "—", "[red]error[/red]", "—", "—", "—", str(p))
+            continue
+        if not s:
+            continue
+        status = s.get("status", "active")
+        clr = {"active": "green", "planning": "blue", "paused": "yellow", "shipped": "cyan"}.get(status, "white")
+        pending = len(s.get("pending_files", []))
+        t.add_row(
+            s.get("name", p.name),
+            s.get("domain", "auto"),
+            f"[{clr}]{status}[/{clr}]",
+            s.get("last_generated", "never"),
+            str(s.get("slide_count") or "—"),
+            f"[yellow]{pending}[/yellow]" if pending else "—",
+            str(p),
+        )
+
+    console.print(f"\n[bold]Sarathi — Projects[/bold]   {len(registry)} tracked\n")
+    console.print(t)
+    console.print()
+
+
+cli.add_command(ls_cmd)
+
+
+@click.command("suchi", hidden=True)
+def suchi_cmd():
+    """List all tracked projects. (suchi = list/index)"""
+    ls_cmd.callback()
+
+
+cli.add_command(suchi_cmd)
+
+
+# ── remove ────────────────────────────────────────────────────────────────────
+
+@click.command("remove")
+@click.argument("folder", type=str)
+@click.option("--delete-files", is_flag=True, help="Also delete the project folder from disk.")
+def remove_cmd(folder, delete_files):
+    """Unregister a project from Sarathi (does not delete files by default)."""
+    import shutil as _shutil
+    from rich.prompt import Confirm
+    folder = _resolve_folder(folder)
+    p = Path(folder)
+    registry = ptf._load_registry()
+    key = str(p)
+    name = registry.get(key, {}).get("name", p.name)
+
+    if delete_files:
+        if not Confirm.ask(f"  [red]Delete all files in '{name}' at {p}?[/red]", default=False):
+            console.print("[dim]Aborted.[/dim]")
+            return
+
+    del registry[key]
+    ptf._save_registry(registry)
+    console.print(f"[green]✓[/green] Unregistered [bold]{name}[/bold] from Sarathi.")
+
+    if delete_files:
+        if p.exists():
+            _shutil.rmtree(p)
+            console.print(f"[green]✓[/green] Deleted folder [dim]{p}[/dim].")
+        else:
+            console.print(f"[dim]Folder {p} not found on disk.[/dim]")
+    else:
+        console.print(f"[dim]Files at {p} were not touched. Use --delete-files to remove them.[/dim]")
+
+
+cli.add_command(remove_cmd)
+
+
+# ── logs ──────────────────────────────────────────────────────────────────────
+
 @click.command("logs")
-@click.argument("job_id")
+@click.argument("job_ref")
 @click.option("--lines", default=50, help="Number of log lines to show.")
-def logs_cmd(job_id, lines):
-    """Tail the log for a background job."""
-    text = _jobs.tail_log(job_id, lines=lines)
-    console.print(f"[dim]── log: {job_id} ──[/dim]")
+def logs_cmd(job_ref, lines):
+    """Tail the log for a background job — accepts job ID or project name."""
+    j = _jobs.resolve_job(job_ref)
+    label = j["id"] if j else job_ref
+    text = _jobs.tail_log(job_ref, lines=lines)
+    console.print(f"[dim]── log: {label} ──[/dim]")
     console.print(text)
 
 
@@ -1454,8 +1616,10 @@ def kill_cmd(job_id, worker, kill_all):
         console.print(f"[yellow]Worker {'stopped' if stopped else 'was not running'}.[/yellow]")
         return
     if job_id:
-        ok = _jobs.kill_job(job_id)
-        console.print(f"[yellow]Job {job_id}: {'stopped' if ok else 'not found or not running'}.[/yellow]")
+        j = _jobs.resolve_job(job_id)
+        real_id = j["id"] if j else job_id
+        ok = _jobs.kill_job(real_id)
+        console.print(f"[yellow]Job {real_id}: {'stopped' if ok else 'not found or not running'}.[/yellow]")
         return
     console.print("[yellow]Specify a job ID, --worker, or --all.[/yellow]")
 

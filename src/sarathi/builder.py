@@ -616,20 +616,35 @@ def generate(
     if _vision and _vision != _planner:
         role_map[_vision] = "Vision"
 
+    # Check which models are already loaded so we can skip warmup for them
+    try:
+        import ollama as _ollama
+        _ps = _ollama.ps()
+        already_loaded = {getattr(mm, "model", "") for mm in (getattr(_ps, "models", []) or [])}
+    except Exception:
+        already_loaded = set()
+
     for m in unique_models:
         role = role_map.get(m, "Model")
+        if m in already_loaded:
+            load_table.add_row(role, m, "[green]✓ in RAM[/green]", "[dim]—[/dim]")
+            continue
         console.print(f"  [dim]Loading {m}...[/dim]", end="\r")
         t0 = time.perf_counter()
         try:
-            import ollama as _ollama
-            # Warmup request — loads model, keep alive for the duration of generation
-            _ollama.generate(model=m, prompt="ready", options={"num_predict": 1})
-            load_s = time.perf_counter() - t0
-            load_table.add_row(
-                role, m,
-                "[green]✓ loaded[/green]",
-                f"[dim]{load_s:.1f}s[/dim]"
-            )
+            import concurrent.futures as _cf
+            with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
+                fut = _ex.submit(
+                    _ollama.generate,
+                    model=m, prompt="hi", options={"num_predict": 1}
+                )
+                try:
+                    fut.result(timeout=90)
+                    load_s = time.perf_counter() - t0
+                    load_table.add_row(role, m, "[green]✓ loaded[/green]", f"[dim]{load_s:.1f}s[/dim]")
+                except _cf.TimeoutError:
+                    load_s = time.perf_counter() - t0
+                    load_table.add_row(role, m, "[yellow]⚠ slow (CPU?)[/yellow]", f"[dim]{load_s:.0f}s+[/dim]")
         except Exception as exc:
             load_s = time.perf_counter() - t0
             load_table.add_row(role, m, "[red]✗ error[/red]", f"[dim]{str(exc)[:30]}[/dim]")

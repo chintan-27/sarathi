@@ -14,6 +14,10 @@ DEFAULTS: dict = {
     "fast_model":     "qwen2.5:3b",         # single-pass --fast mode
     "theme":          "dark-gradient",
     "domain":         "auto",
+    # Cloud API (OpenAI-compatible) — primary backend when set
+    "backend":        "ollama",             # "cloud" | "ollama"
+    "cloud_api_url":  "",
+    "cloud_api_key":  "",                   # stored encrypted via keystore.py
 }
 
 
@@ -39,6 +43,20 @@ def load_project_config(project_dir: Path) -> dict:
             pass
 
     return merged
+
+
+def save_global_config(data: dict) -> None:
+    """Merge-update ~/.config/sarathi/config.json with the given keys."""
+    global_path = _GLOBAL_CONFIG_DIR / "config.json"
+    _GLOBAL_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    existing: dict = {}
+    if global_path.exists():
+        try:
+            existing = json.loads(global_path.read_text())
+        except Exception:
+            pass
+    existing.update(data)
+    global_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
 
 
 def save_project_config(project_dir: Path, data: dict) -> None:

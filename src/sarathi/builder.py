@@ -7,8 +7,11 @@ from pathlib import Path
 
 from .scanner import ResultFile
 
-# Populated by _chat_via_ollama; read by generate() to include in returned stats
+# Populated by _chat_via_ollama/_chat_via_openai; read by generate() for stats
 _last_gen_tps: float = 0.0
+
+# Set at the start of generate() from loaded config; read by _chat()
+_cloud_config: dict = {}
 
 # ── Domain detection ──────────────────────────────────────────────────────────
 
@@ -246,186 +249,131 @@ def _planner_user(project_name: str, description: str, domain: str,
 # ── Pass 2: Coder prompt ──────────────────────────────────────────────────────
 
 _CODER_SYSTEM = """\
-You are an elite Reveal.js slide engineer. Write one beautiful, production-quality \
-<section> for the slide described below.
+You are a Reveal.js slide author. Write ONE <section> element for the slide described.
 
-Output ONLY:
-<html_code>
-<section ...>
-  ...slide content...
-  <aside class="notes">speaker notes here</aside>
-</section>
-</html_code>
+OUTPUT: Only the raw <section>...</section> HTML. No prose, no markdown, no explanation.
 
-No prose. No markdown. No explanation. Just the <section> wrapped in <html_code> tags.
+STRICT RULES:
+1. Add data-auto-animate to every <section>.
+2. Wrap every <li> in class="fragment".
+3. USE THE EXACT HEADING from SlideSpec — never swap it for a generic label like "Results".
+4. Speaker notes: 2-3 sentences referencing specific file names, function names, or commit details.
+5. CODE slides: MAXIMUM 6 LINES. Cut everything else mercilessly. One subtitle sentence after.
+6. Never invent facts not present in the SlideSpec or Artifacts.
+7. No <style> tags. CSS vars available: --accent, --accent2, --fg, --dim
+   Classes: r-fit-text, r-stretch, r-stack, fragment, subtitle, hero-metric
 
-══════════════════════
-GROUNDING RULE
-══════════════════════
-Every word on the slide must come from the provided SlideSpec insight, bullet_points, \
-and Artifacts. Do NOT invent facts, metrics, or examples not present in the input.
-If speaker_notes are provided in the SlideSpec, use them — expand them, don't replace them.
-If bullet_points are provided, use them — refine the wording, don't invent new ones.
+TEMPLATES BY TYPE — use the one matching the slide type:
 
-══════════════════════
-SLIDE TEMPLATES
-══════════════════════
-
-TITLE:
+code:
 <section data-auto-animate>
-  <h1>{actual project name}</h1>
-  <p class="subtitle">{actual one-liner from description}</p>
-  <p class="subtitle" style="margin-top:1.5em;font-size:.55em;color:var(--dim)">May 2026</p>
-  <aside class="notes">Welcome the audience. State the core problem this project solves. Set expectations for what they'll learn.</aside>
-</section>
-
-METRIC CALLOUT:
-<section data-auto-animate>
-  <p style="color:var(--accent);font-size:.65em;text-transform:uppercase;letter-spacing:.12em;margin-bottom:.3em">KEY RESULT</p>
-  <h2 class="r-fit-text hero-metric">{the actual number}</h2>
-  <p class="subtitle">{what this number means and why it matters}</p>
-  <aside class="notes">{3-4 sentences expanding on the metric — where it came from, why this level matters, what changed to achieve it}</aside>
-</section>
-
-CONTENT / BULLETS:
-<section data-auto-animate>
-  <h2>{conclusion as heading — a sentence, not a label}</h2>
-  <ul>
-    <li class="fragment">{complete sentence insight with specific detail}</li>
-    <li class="fragment">{complete sentence insight with specific detail}</li>
-    <li class="fragment">{complete sentence insight with specific detail}</li>
-  </ul>
-  <aside class="notes">{expand on 2-3 of the bullets — add context the audience needs but doesn't see on slide}</aside>
-</section>
-
-CODE:
-<section data-auto-animate>
-  <h2>{what this code does and why it matters}</h2>
-  <pre><code class="{language-python|language-bash|language-javascript}" data-trim data-line-numbers>
-{10-20 lines of actual code from the artifact — the most important part only}
+  <h2>{EXACT HEADING FROM SPEC}</h2>
+  <pre><code class="language-python" data-trim data-line-numbers>
+{MAX 6 LINES of the most important code — nothing more}
   </code></pre>
   <p class="subtitle">{one sentence: why this design decision was made}</p>
-  <aside class="notes">{walk through the key lines — what problem this solves, what alternatives were considered}</aside>
+  <aside class="notes">{2-3 specific sentences from the artifacts}</aside>
 </section>
 
-IMAGE / CHART:
+comparison:
 <section data-auto-animate>
-  <h2>{conclusion drawn from the visual, not a label}</h2>
-  <img class="r-stretch" src="{FULL DATA URI — do not truncate}" alt="{description}">
-  <p style="font-size:.5em;color:var(--dim)">{one annotation explaining what to focus on}</p>
-  <aside class="notes">{describe what the visual shows, point out the key pattern, explain what action it suggests}</aside>
-</section>
-
-COMPARISON:
-<section data-auto-animate>
-  <h2>{what changed and why it matters}</h2>
+  <h2>{EXACT HEADING FROM SPEC}</h2>
   <div class="r-stack">
     <div class="fragment fade-out" style="width:100%;text-align:left">
       <p style="color:var(--dim);font-size:.7em;text-transform:uppercase">Before</p>
-      <p>{specific description of before state}</p>
+      <p>{specific before state from the artifacts}</p>
     </div>
     <div class="fragment" style="width:100%;text-align:left">
       <p style="color:var(--accent);font-size:.7em;text-transform:uppercase">After</p>
-      <p>{specific description of after state — what improved}</p>
+      <p>{specific after state — what improved}</p>
     </div>
   </div>
-  <aside class="notes">{explain why this change was made, what the impact was, how it was measured}</aside>
+  <aside class="notes">{why this change was made, what the measured impact was}</aside>
 </section>
 
-TAKEAWAYS:
+table (for CSV data):
 <section data-auto-animate>
-  <h2>Key Takeaways</h2>
-  <ul>
-    <li class="fragment">{complete sentence — specific insight with real detail}</li>
-    <li class="fragment">{complete sentence — specific insight with real detail}</li>
-    <li class="fragment">{complete sentence — specific insight with real detail}</li>
-  </ul>
-  <aside class="notes">Summarise the arc of the presentation. What should the audience remember in a week? What's the one-sentence version of this project's outcome?</aside>
-</section>
-
-NEXT STEPS:
-<section data-auto-animate>
-  <h2>What Comes Next</h2>
-  <ul>
-    <li class="fragment">{concrete next action — specific, not vague}</li>
-    <li class="fragment">{open question worth investigating}</li>
-    <li class="fragment">{known limitation to address}</li>
-  </ul>
-  <aside class="notes">{Why these priorities? What would unblock the most value? What did we learn that changes direction?}</aside>
-</section>
-
-TABLE (for CSV data):
-<section data-auto-animate>
-  <h2>{one insight sentence — what the data shows, not "Data Table"}</h2>
+  <h2>{EXACT HEADING FROM SPEC}</h2>
   <table style="width:100%;border-collapse:collapse;font-size:.75em">
-    <thead>
-      <tr style="border-bottom:2px solid var(--accent)">
-        <th style="padding:.4em .8em;text-align:left">{col1}</th>
-        <th style="padding:.4em .8em;text-align:left">{col2}</th>
-      </tr>
-    </thead>
+    <thead><tr style="border-bottom:2px solid var(--accent)">
+      <th style="padding:.4em .8em;text-align:left">{real col name}</th>
+      <th style="padding:.4em .8em;text-align:left">{real col name}</th>
+    </tr></thead>
     <tbody>
-      <tr class="fragment"><td style="padding:.35em .8em">{val}</td><td style="padding:.35em .8em">{val}</td></tr>
+      <tr class="fragment"><td style="padding:.35em .8em">{real value}</td><td style="padding:.35em .8em">{real value}</td></tr>
     </tbody>
   </table>
-  <p class="subtitle">{what this table reveals — the key pattern or outlier}</p>
-  <aside class="notes">{walk the audience through the most important row. What action does this data suggest?}</aside>
+  <p class="subtitle">{key insight: what pattern or outlier does this table show?}</p>
+  <aside class="notes">{what action this data suggests}</aside>
 </section>
 
-══════════════════════
-RULES
-══════════════════════
-1. No <style> tags — CSS vars are globally injected: --accent, --accent2, --fg, --fg2, --dim, --bg
-2. data-auto-animate on every <section> — enables smooth transitions between slides
-3. class="fragment" on every <li> — reveals bullets one at a time
-4. Speaker notes: NEVER write "Note about this slide." Write real, specific notes.
-5. Headings: NEVER write a label. Write a conclusion. "sarathi Cuts Slide Prep from Hours to Minutes" not "Results".
-6. Code: NEVER dump an entire file. Pick the 3-8 most important lines. A code slide must explain WHY those lines matter.
-7. Images: embed the full data URI — never truncate, never use a URL placeholder.
-8. VISUAL FIRST: If the SlideSpec type is "chart" or "image", the slide MUST contain an <img> with the full data URI. Never replace an image slide with bullets.
-9. ANTI-CODE-DUMP: If the slide type is NOT "code", do NOT use a <pre><code> block. Use a metric callout, bullet insight, or table instead.
-10. VARIETY: A deck where every slide is bullets is a failure. Use metric callouts, images, tables, and comparisons whenever the content supports it.
+general content (context, bullets, any other type):
+<section data-auto-animate>
+  <h2>{EXACT HEADING FROM SPEC}</h2>
+  <ul>
+    <li class="fragment">{specific insight — use the bullet_points from spec verbatim if provided}</li>
+    <li class="fragment">{specific insight}</li>
+    <li class="fragment">{specific insight}</li>
+  </ul>
+  <aside class="notes">{2-3 specific sentences}</aside>
+</section>
 """
+
+
+def _lookup_artifact(path: str, artifacts_map: dict) -> "ResultFile | None":
+    rf = artifacts_map.get(path)
+    if rf:
+        return rf
+    fname = path.rsplit("/", 1)[-1]
+    return artifacts_map.get(fname)
 
 
 def _coder_user(slide: dict, artifacts_map: dict[str, ResultFile]) -> str:
     artifact_blocks = []
     for path in slide.get("artifacts", []):
-        rf = artifacts_map.get(path)
+        rf = _lookup_artifact(path, artifacts_map)
         if rf is None:
             continue
         if rf.type in ("image", "svg"):
+            # Pass ready-to-use <img> tag so model just copies it
             artifact_blocks.append(
-                f"[IMAGE artifact: {rf.filename}]\n"
-                f"Use this exact data URI as the src: {rf.content[:120]}..."
-                f"\n(full URI available — use it verbatim)"
+                f"[IMAGE: {rf.filename}]\n"
+                f'<img class="r-stretch" src="{rf.content}" alt="{rf.filename}">'
             )
-            # Pass full URI separately so LLM can use it
-            artifact_blocks.append(f"FULL_URI_{rf.filename}: {rf.content}")
         elif rf.type == "data":
             artifact_blocks.append(
                 f"[DATA: {rf.filename}]\n{rf.content[:1500]}"
                 + ("\n...(truncated)" if len(rf.content) > 1500 else "")
             )
         elif rf.type in ("text", "code"):
+            # Hard-truncate code to enforce the 6-line rule downstream
+            max_chars = 350 if rf.type == "code" else 1200
             artifact_blocks.append(
-                f"[{rf.type.upper()}: {rf.filename}]\n{rf.content[:1500]}"
-                + ("\n...(truncated)" if len(rf.content) > 1500 else "")
+                f"[{rf.type.upper()}: {rf.filename}]\n{rf.content[:max_chars]}"
+                + ("\n...(truncated — use only the key lines shown above)"
+                   if len(rf.content) > max_chars else "")
             )
 
     artifacts_text = "\n\n".join(artifact_blocks) if artifact_blocks else "(no artifacts)"
 
+    bullets_text = ""
+    if slide.get("bullet_points"):
+        bullets_text = (
+            "bullet_points (use these verbatim as <li> content):\n"
+            + "\n".join(f"  - {b}" for b in slide["bullet_points"])
+            + "\n"
+        )
+
     return (
         f"<SlideSpec>\n"
-        f"id: {slide['id']}\n"
         f"type: {slide['type']}\n"
         f"heading: {slide['heading']}\n"
         f"insight: {slide.get('insight', '')}\n"
-        f"layout_hint: {slide.get('layout_hint', '')}\n"
-        f"speaker_notes: {slide.get('speaker_notes', '')}\n"
+        + bullets_text
+        + f"speaker_notes: {slide.get('speaker_notes', '')}\n"
         f"</SlideSpec>\n\n"
         f"<Artifacts>\n{artifacts_text}\n</Artifacts>\n\n"
-        f"Generate the <section> HTML now."
+        f"Write the <section> HTML for this {slide['type']} slide."
     )
 
 
@@ -581,7 +529,13 @@ def generate(
     vision_model: str | None = None,
     fast_model: str | None = None,
     delta: dict | None = None,
+    cloud_api_url: str = "",
+    cloud_api_key: str = "",
 ) -> dict:
+    # Activate cloud backend for this generation run (module-level, thread-safe enough for CLI)
+    global _cloud_config
+    _cloud_config = {"cloud_api_url": cloud_api_url, "cloud_api_key": cloud_api_key}
+
     # Role-specific model routing — fall back to `model` if roles not set
     _planner = planner_model or model
     _coder   = coder_model   or model
@@ -597,61 +551,67 @@ def generate(
 
     console = Console()
 
-    # ── Preload models into RAM ───────────────────────────────────────────────
-    unique_models = list(dict.fromkeys(
-        [_fast] if fast else [_planner, _coder] +
-        ([_vision] if _vision != _planner else [])
-    ))
-    console.print()
-    console.print("[bold][sarathi] Loading models into RAM...[/bold]")
+    # ── Preload models into RAM (Ollama only — skip for cloud backend) ───────────
+    using_cloud = bool(cloud_api_url and cloud_api_key)
 
-    load_table = Table(box=rbox.SIMPLE, show_header=True, padding=(0, 2),
-                       header_style="bold cyan")
-    load_table.add_column("Role")
-    load_table.add_column("Model", style="bold")
-    load_table.add_column("Status", justify="right")
-    load_table.add_column("Load time", justify="right")
+    if not using_cloud:
+        unique_models = list(dict.fromkeys(
+            [_fast] if fast else [_planner, _coder] +
+            ([_vision] if _vision != _planner else [])
+        ))
+        console.print()
+        console.print("[bold][sarathi] Loading models into RAM...[/bold]")
 
-    role_map = {_planner: "Planner", _coder: "Coder"}
-    if _vision and _vision != _planner:
-        role_map[_vision] = "Vision"
+        load_table = Table(box=rbox.SIMPLE, show_header=True, padding=(0, 2),
+                           header_style="bold cyan")
+        load_table.add_column("Role")
+        load_table.add_column("Model", style="bold")
+        load_table.add_column("Status", justify="right")
+        load_table.add_column("Load time", justify="right")
 
-    # Check which models are already loaded so we can skip warmup for them
-    try:
-        import ollama as _ollama
-        _ps = _ollama.ps()
-        already_loaded = {getattr(mm, "model", "") for mm in (getattr(_ps, "models", []) or [])}
-    except Exception:
-        already_loaded = set()
+        role_map = {_planner: "Planner", _coder: "Coder"}
+        if _vision and _vision != _planner:
+            role_map[_vision] = "Vision"
 
-    for m in unique_models:
-        role = role_map.get(m, "Model")
-        if m in already_loaded:
-            load_table.add_row(role, m, "[green]✓ in RAM[/green]", "[dim]—[/dim]")
-            continue
-        console.print(f"  [dim]Loading {m}...[/dim]", end="\r")
-        t0 = time.perf_counter()
         try:
-            import concurrent.futures as _cf
-            with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
-                fut = _ex.submit(
-                    _ollama.generate,
-                    model=m, prompt="hi", options={"num_predict": 1}
-                )
-                try:
-                    fut.result(timeout=90)
-                    load_s = time.perf_counter() - t0
-                    load_table.add_row(role, m, "[green]✓ loaded[/green]", f"[dim]{load_s:.1f}s[/dim]")
-                except _cf.TimeoutError:
-                    load_s = time.perf_counter() - t0
-                    load_table.add_row(role, m, "[yellow]⚠ slow (CPU?)[/yellow]", f"[dim]{load_s:.0f}s+[/dim]")
-        except Exception as exc:
-            load_s = time.perf_counter() - t0
-            load_table.add_row(role, m, "[red]✗ error[/red]", f"[dim]{str(exc)[:30]}[/dim]")
+            import ollama as _ollama
+            _ps = _ollama.ps()
+            already_loaded = {getattr(mm, "model", "") for mm in (getattr(_ps, "models", []) or [])}
+        except Exception:
+            already_loaded = set()
 
-    console.print()
-    console.print(load_table)
-    console.print()
+        for m in unique_models:
+            role = role_map.get(m, "Model")
+            if m in already_loaded:
+                load_table.add_row(role, m, "[green]✓ in RAM[/green]", "[dim]—[/dim]")
+                continue
+            console.print(f"  [dim]Loading {m}...[/dim]", end="\r")
+            t0 = time.perf_counter()
+            try:
+                import concurrent.futures as _cf
+                with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
+                    fut = _ex.submit(
+                        _ollama.generate,
+                        model=m, prompt="hi", options={"num_predict": 1}
+                    )
+                    try:
+                        fut.result(timeout=90)
+                        load_s = time.perf_counter() - t0
+                        load_table.add_row(role, m, "[green]✓ loaded[/green]", f"[dim]{load_s:.1f}s[/dim]")
+                    except _cf.TimeoutError:
+                        load_s = time.perf_counter() - t0
+                        load_table.add_row(role, m, "[yellow]⚠ slow (CPU?)[/yellow]", f"[dim]{load_s:.0f}s+[/dim]")
+            except Exception as exc:
+                load_s = time.perf_counter() - t0
+                load_table.add_row(role, m, "[red]✗ error[/red]", f"[dim]{str(exc)[:30]}[/dim]")
+
+        console.print()
+        console.print(load_table)
+        console.print()
+    else:
+        console.print()
+        console.print(f"[dim][sarathi][/dim] Backend: [cyan]cloud[/cyan] ({cloud_api_url})")
+        console.print()
 
     # Pre-render CSVs to chart images
     csv_files = [f for f in files if f.type == "data" and f.filename.endswith(".csv")]
@@ -1344,7 +1304,73 @@ def _chat_via_ollama(model: str, system: str, user: str,
     return result
 
 
+def _chat_via_openai(model: str, system: str, user: str, verbose: bool = False) -> str:
+    """Stream generation via an OpenAI-compatible API (LiteLLM, Azure, etc.)."""
+    from openai import OpenAI
+    import time
+    import sys
+
+    url = _cloud_config["cloud_api_url"]
+    raw_key = _cloud_config["cloud_api_key"]
+    # Decrypt key if it was stored encrypted
+    from . import keystore as _ks
+    key = _ks.decrypt(raw_key)
+
+    client = OpenAI(api_key=key, base_url=url)
+
+    if verbose:
+        from rich.console import Console as _C
+        _C().print(f"  [dim][cloud] {url} · model={model}[/dim]")
+
+    chunks: list[str] = []
+    out_tokens = 0
+    t0 = time.perf_counter()
+    est_in = (len(system) + len(user)) // 4
+
+    stream = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user",   "content": user},
+        ],
+        stream=True,
+    )
+    for chunk in stream:
+        delta = chunk.choices[0].delta if chunk.choices else None
+        if delta and delta.content:
+            chunks.append(delta.content)
+            out_tokens += 1
+            if out_tokens % 10 == 0:
+                elapsed = time.perf_counter() - t0
+                tps = out_tokens / max(elapsed, 0.1)
+                bar_full = min(out_tokens // 20, 30)
+                bar = "█" * bar_full + "░" * (30 - bar_full)
+                sys.stdout.write(
+                    f"\r  [{bar}]  out {out_tokens}  {tps:.1f} tok/s  {elapsed:.0f}s" + " " * 20
+                )
+                sys.stdout.flush()
+
+    elapsed = time.perf_counter() - t0
+    tps = out_tokens / max(elapsed, 0.001)
+    sys.stdout.write("\r" + " " * 100 + "\r")
+    sys.stdout.flush()
+    print(f"  ✓  ~{est_in:,} in  ·  {out_tokens} out  ·  {tps:.1f} tok/s  ·  {elapsed:.0f}s")
+
+    global _last_gen_tps
+    _last_gen_tps = tps
+    return "".join(chunks)
+
+
 def _chat(model: str, system: str, user: str, verbose: bool = False) -> str:
+    if _cloud_config.get("cloud_api_url") and _cloud_config.get("cloud_api_key"):
+        try:
+            return _chat_via_openai(model, system, user, verbose=verbose)
+        except Exception as exc:
+            from rich.console import Console as _C
+            _C().print(
+                f"  [yellow]⚠ Cloud API error ({exc.__class__.__name__}: {exc}) "
+                f"— falling back to Ollama[/yellow]"
+            )
     return _chat_via_ollama(model, system, user, verbose=verbose)
 
 
@@ -1363,12 +1389,91 @@ def _generate_outline(
     return _extract_json(text)
 
 
+def _render_slide_nollm(slide: dict, artifacts_map: dict) -> "str | None":
+    """Render simple slide types directly in Python — fast, reliable, no LLM tokens wasted."""
+    stype  = slide.get("type", "")
+    heading = slide.get("heading", "Slide")
+    insight = slide.get("insight", "")
+    notes   = slide.get("speaker_notes", "") or insight
+    bullets = slide.get("bullet_points", [])
+
+    # Title slide
+    if stype == "title":
+        from datetime import date
+        month_year = date.today().strftime("%B %Y")
+        sub = insight[:200] if insight else ""
+        return (
+            '<section data-auto-animate>\n'
+            f'  <h1>{heading}</h1>\n'
+            + (f'  <p class="subtitle">{sub}</p>\n' if sub else "")
+            + f'  <p class="subtitle" style="margin-top:1.5em;font-size:.55em;color:var(--dim)">{month_year}</p>\n'
+            f'  <aside class="notes">{notes}</aside>\n'
+            '</section>'
+        )
+
+    # Image / Chart — embed the full data URI directly, no LLM needed
+    if stype in ("image", "chart"):
+        for path in slide.get("artifacts", []):
+            rf = _lookup_artifact(path, artifacts_map)
+            if rf and rf.type in ("image", "svg"):
+                ann = insight[:200] if insight else ""
+                return (
+                    '<section data-auto-animate>\n'
+                    f'  <h2>{heading}</h2>\n'
+                    f'  <img class="r-stretch" src="{rf.content}" alt="{rf.filename}">\n'
+                    + (f'  <p style="font-size:.5em;color:var(--dim)">{ann}</p>\n' if ann else "")
+                    + f'  <aside class="notes">{notes}</aside>\n'
+                    '</section>'
+                )
+        return None  # no image artifact found — fall back to LLM
+
+    # Metric callout — extract the first number+unit from heading or insight
+    if stype == "metric_callout":
+        m = re.search(
+            r'(\d[\d,\.]*\s*(?:%|x|×|ms|s(?= )|MB|GB|K\b|M\b|B\b)?)',
+            heading + " " + insight
+        )
+        if m:
+            metric = m.group(1).strip()
+            sub = insight[:200] if insight else heading
+            return (
+                '<section data-auto-animate>\n'
+                '  <p style="color:var(--accent);font-size:.65em;text-transform:uppercase;'
+                'letter-spacing:.12em;margin-bottom:.3em">KEY RESULT</p>\n'
+                f'  <h2 class="r-fit-text hero-metric">{metric}</h2>\n'
+                f'  <p class="subtitle">{sub}</p>\n'
+                f'  <aside class="notes">{notes}</aside>\n'
+                '</section>'
+            )
+        return None  # no metric found — fall back to LLM
+
+    # Bullet slides — use the planner's bullet_points directly (already grounded in artifacts)
+    if stype in ("context", "takeaways", "next_steps") and bullets:
+        items = "\n".join(f'    <li class="fragment">{b}</li>' for b in bullets[:5])
+        return (
+            '<section data-auto-animate>\n'
+            f'  <h2>{heading}</h2>\n'
+            '  <ul>\n'
+            f'{items}\n'
+            '  </ul>\n'
+            f'  <aside class="notes">{notes}</aside>\n'
+            '</section>'
+        )
+
+    return None  # code, comparison, table, and unplanned bullets go to LLM
+
+
 def _render_slide(
     slide: dict,
     artifacts_map: dict[str, ResultFile],
     model: str,
     verbose: bool = False,
 ) -> str:
+    # Fast path: Python rendering for reliable slide types (no LLM, no tokens)
+    html = _render_slide_nollm(slide, artifacts_map)
+    if html is not None:
+        return html
+    # LLM path: code, comparison, table, or bullet slides without planned points
     user_msg = _coder_user(slide, artifacts_map)
     text = _chat(model, _CODER_SYSTEM, user_msg, verbose=verbose)
     return _extract_section(text)

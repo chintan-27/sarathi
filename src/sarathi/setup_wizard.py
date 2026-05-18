@@ -340,6 +340,139 @@ def check_playwright() -> bool:
         return False
 
 
+# ── Cloud API setup ────────────────────────────────────────────────────────────
+
+def _setup_cloud_api() -> "dict | None":
+    """Interactive cloud API setup. Returns config dict on success, None if skipped."""
+    console.print()
+    console.print(Panel(
+        "[bold]Do you have an OpenAI-compatible cloud API?[/bold]\n"
+        "[dim]e.g. university proxy, Azure OpenAI, LiteLLM, together.ai[/dim]\n\n"
+        "[dim]Press Enter to skip and use local Ollama instead.[/dim]",
+        border_style="cyan", title="Cloud API (optional)"
+    ))
+
+    url = console.input("  [bold]API URL[/bold] [dim](Enter to skip)[/dim]: ").strip()
+    if not url:
+        console.print("  [dim]Skipping cloud API — using local Ollama.[/dim]\n")
+        return None
+
+    key = console.input("  [bold]API Key[/bold]: ").strip()
+    if not key:
+        console.print("  [yellow]No key entered — skipping cloud API.[/yellow]\n")
+        return None
+
+    # Test connection and list models
+    console.print(f"  [dim]Connecting to {url}...[/dim]", end="\r")
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=key, base_url=url)
+        models_resp = client.models.list()
+        model_ids = [m.id for m in (models_resp.data or [])]
+    except Exception as exc:
+        console.print(f"  [red]✗ Connection failed: {exc}[/red]")
+        console.print("  [dim]Falling back to local Ollama setup.[/dim]\n")
+        return None
+
+    if not model_ids:
+        console.print("  [yellow]⚠ Connected but no models listed — check your API key.[/yellow]")
+        console.print("  [dim]Falling back to local Ollama setup.[/dim]\n")
+        return None
+
+    console.print(f"  [green]✓ Connected — {len(model_ids)} model(s) available[/green]   ")
+    console.print()
+
+    # Show model table
+    model_table = Table(box=box.SIMPLE, show_header=True, padding=(0, 2),
+                        header_style="bold cyan")
+    model_table.add_column("#", width=4, style="dim")
+    model_table.add_column("Model ID", style="bold")
+    for i, mid in enumerate(model_ids[:20], 1):
+        model_table.add_row(str(i), mid)
+    if len(model_ids) > 20:
+        model_table.add_row("…", f"[dim]+{len(model_ids) - 20} more[/dim]")
+    console.print(model_table)
+    console.print("[dim]Enter a number from the table above or type a model ID directly.[/dim]")
+
+    def _pick(role: str, hint: str, default_idx: int) -> str:
+        default_id = model_ids[min(default_idx, len(model_ids) - 1)]
+        choice = console.input(
+            f"  [bold]{role}[/bold] [dim]({hint}) — default: [cyan]{default_id}[/cyan][/dim]: "
+        ).strip()
+        if not choice:
+            return default_id
+        if choice.isdigit():
+            idx = int(choice) - 1
+            return model_ids[idx] if 0 <= idx < len(model_ids) else default_id
+        return choice  # typed model ID directly
+
+    planner = _pick("Planner", "narrative outline, strong reasoning", 0)
+    coder   = _pick("Coder",   "HTML/code generation",               -1)
+    fast    = _pick("Fast",    "--fast mode, speed > quality",        -1)
+    vision  = _pick("Vision",  "image understanding (use GPT-4o class)", 0)
+
+    # Encrypt key before storing
+    from . import keystore as _ks
+    encrypted_key = _ks.encrypt(key)
+
+    cloud_cfg = {
+        "backend":        "cloud",
+        "cloud_api_url":  url,
+        "cloud_api_key":  encrypted_key,
+        "planner_model":  planner,
+        "coder_model":    coder,
+        "vision_model":   vision,
+        "fast_model":     fast,
+        "model":          coder,
+    }
+
+    from . import config as _cfg
+    _cfg.save_global_config(cloud_cfg)
+
+    console.print()
+    console.print(
+        f"[green]✓ Cloud API configured.[/green]\n"
+        f"  Backend  : [cyan]cloud[/cyan] ({url})\n"
+        f"  Planner  : [cyan]{planner}[/cyan]\n"
+        f"  Coder    : [cyan]{coder}[/cyan]\n"
+        f"  Vision   : [cyan]{vision}[/cyan]\n"
+        f"  Fast     : [cyan]{fast}[/cyan]"
+    )
+    return {**cloud_cfg, "cloud_api_key": key}  # return decrypted key for tip display
+
+
+def _show_claude_code_tip(cloud_cfg: dict) -> None:
+    """Print env var instructions for using the same proxy in Claude Code."""
+    url = cloud_cfg.get("cloud_api_url", "")
+    key = cloud_cfg.get("cloud_api_key", "")
+    console.print()
+    console.print(Panel(
+        "[bold]Use the same API in Claude Code[/bold]\n\n"
+        "Add these to your shell profile ([dim]~/.bashrc[/dim] or [dim]~/.zshrc[/dim]):\n\n"
+        f"  [cyan]export ANTHROPIC_BASE_URL={url}[/cyan]\n"
+        f"  [cyan]export ANTHROPIC_API_KEY={key}[/cyan]\n\n"
+        "[dim]Claude Code will route its requests through your proxy.[/dim]",
+        border_style="dim", title="Claude Code integration (optional)"
+    ))
+
+
+# ── Playwright install helper ──────────────────────────────────────────────────
+
+def _setup_playwright() -> None:
+    """Install Playwright chromium if not already present."""
+    console.print("[bold]Checking Playwright (PDF export)...[/bold]")
+    pw_ok = check_playwright()
+    if not pw_ok:
+        console.print("  [dim]Installing Playwright chromium...[/dim]")
+        subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            check=False,
+        )
+    else:
+        console.print("  [green]✓ Playwright chromium ready.[/green]")
+    console.print()
+
+
 # ── Main wizard ────────────────────────────────────────────────────────────────
 
 def run() -> None:
@@ -350,6 +483,21 @@ def run() -> None:
         border_style="cyan",
     ))
     console.print()
+
+    # ── Cloud API (offered first — skips Ollama if accepted) ──────────────────
+    cloud_result = _setup_cloud_api()
+    if cloud_result:
+        console.print(
+            "[dim]  Cloud API set as primary backend. "
+            "Ollama will be used as automatic fallback.[/dim]"
+        )
+        if not Confirm.ask(
+            "  Also set up local Ollama models for offline fallback?", default=False
+        ):
+            _setup_playwright()
+            _show_claude_code_tip(cloud_result)
+            console.print("\n[green]✓ Sarathi setup complete![/green]\n")
+            return
 
     # ── Hardware report ────────────────────────────────────────────────────────
     console.print("[bold]Detecting your hardware...[/bold]")
@@ -700,6 +848,10 @@ def run() -> None:
             console.print("  [green]✓ Chromium ready.[/green]")
         else:
             console.print("  [yellow]⚠ Playwright install had issues — PDF export may not work.[/yellow]")
+
+    # ── Claude Code tip (if cloud was configured) ─────────────────────────────
+    if cloud_result:
+        _show_claude_code_tip(cloud_result)
 
     # ── Done ───────────────────────────────────────────────────────────────────
     console.print()

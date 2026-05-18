@@ -400,6 +400,8 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
     vision_model   = project_cfg.get("vision_model")
     fast_model     = project_cfg.get("fast_model")
     theme          = project_cfg.get("theme", "dark-gradient")
+    cloud_api_url  = project_cfg.get("cloud_api_url", "")
+    cloud_api_key  = project_cfg.get("cloud_api_key", "")
     output_dir = project_dir / "output"
     output_dir.mkdir(exist_ok=True)
 
@@ -488,6 +490,8 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
                 vision_model=vision_model,
                 fast_model=fast_model,
                 delta=delta or None,
+                cloud_api_url=cloud_api_url,
+                cloud_api_key=cloud_api_key,
             ) or {}
             trk.write_status(project_dir, state="idle")
             trk.log_event(project_dir, "generated",
@@ -1036,6 +1040,8 @@ def _diff_impl(folder: str, from_label: str, to_label: str, model: str | None):
         project_dir=project_dir,
         theme=project_cfg.get("theme", "dark-gradient"),
         domain_override="diff",
+        cloud_api_url=project_cfg.get("cloud_api_url", ""),
+        cloud_api_key=project_cfg.get("cloud_api_key", ""),
     )
     console.print(f"[green][sarathi] Diff presentation → {html_out}[/green]")
 

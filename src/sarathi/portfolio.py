@@ -335,6 +335,42 @@ def _compute_insight(all_summaries: list[dict], wrapped: dict) -> str:
 
 
 def _get_ollama_status() -> dict:
+    """Check backend status — cloud API if configured, otherwise Ollama."""
+    from . import config as _cfg
+    from . import keystore as _ks
+
+    # Load global config (use a dummy path — load_project_config merges global first)
+    try:
+        global_cfg = _cfg.load_project_config(Path.home())
+    except Exception:
+        global_cfg = {}
+
+    if global_cfg.get("backend") == "cloud" and global_cfg.get("cloud_api_url"):
+        url = global_cfg["cloud_api_url"]
+        raw_key = global_cfg.get("cloud_api_key", "")
+        key = _ks.decrypt(raw_key) if raw_key else ""
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=key, base_url=url)
+            models_resp = client.models.list()
+            first_model = models_resp.data[0].id if models_resp.data else None
+            return {
+                "running": True,
+                "backend": "cloud",
+                "loaded_model": first_model,
+                "ram_gb": 0,
+                "url": url,
+            }
+        except Exception:
+            return {
+                "running": False,
+                "backend": "cloud",
+                "loaded_model": None,
+                "ram_gb": 0,
+                "url": url,
+            }
+
+    # Default: Ollama
     try:
         import ollama
         ps = ollama.ps()
@@ -346,10 +382,10 @@ def _get_ollama_status() -> dict:
             size = getattr(m, "size", 0) or 0
             ram_bytes = size_vram or size
             ram_gb = ram_bytes / 1_073_741_824
-            return {"running": True, "loaded_model": name, "ram_gb": round(ram_gb, 1)}
-        return {"running": True, "loaded_model": None, "ram_gb": 0}
+            return {"running": True, "backend": "ollama", "loaded_model": name, "ram_gb": round(ram_gb, 1)}
+        return {"running": True, "backend": "ollama", "loaded_model": None, "ram_gb": 0}
     except Exception:
-        return {"running": False, "loaded_model": None, "ram_gb": 0}
+        return {"running": False, "backend": "ollama", "loaded_model": None, "ram_gb": 0}
 
 
 def _project_summary(project_dir: Path) -> dict:

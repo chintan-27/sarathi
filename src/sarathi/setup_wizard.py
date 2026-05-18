@@ -776,18 +776,6 @@ def _run_offline_setup(hw: dict, fallback_prefix: str = "") -> dict:
 
 # ── Helper functions ───────────────────────────────────────────────────────────
 
-def _show_claude_code_tip(cloud_cfg: dict) -> None:
-    url = cloud_cfg.get("cloud_api_url", "")
-    key = cloud_cfg.get("cloud_api_key", "")
-    console.print()
-    console.print(Panel(
-        "[bold]Use the same API in Claude Code[/bold]\n\n"
-        "Add to your shell profile ([dim]~/.bashrc[/dim] or [dim]~/.zshrc[/dim]):\n\n"
-        f"  [cyan]export ANTHROPIC_BASE_URL={url}[/cyan]\n"
-        f"  [cyan]export ANTHROPIC_API_KEY={key}[/cyan]\n\n"
-        "[dim]Claude Code will route requests through your proxy.[/dim]",
-        border_style="dim", title="Claude Code integration (optional)",
-    ))
 
 
 def _setup_playwright() -> None:
@@ -879,10 +867,6 @@ def run() -> None:
 
     # ── Playwright ─────────────────────────────────────────────────────────────
     _setup_playwright()
-
-    # ── Claude Code tip ────────────────────────────────────────────────────────
-    if cloud_result:
-        _show_claude_code_tip(cloud_result)
 
     # ── Done ───────────────────────────────────────────────────────────────────
     console.print()

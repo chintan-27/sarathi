@@ -709,8 +709,8 @@ def _run_offline_setup(hw: dict, fallback_prefix: str = "") -> dict:
             console.print("  [green]✓ gemma3:12b ready.[/green]")
     console.print()
 
-    # Benchmark
-    if installed and running:
+    # Benchmark — only run when Ollama is the primary backend (not a fallback)
+    if installed and running and not fallback_prefix:
         console.print("[bold]Benchmarking your models...[/bold]")
         console.print("[dim]  Measuring cold-start speed for each role.[/dim]\n")
         unique_models = list(dict.fromkeys([planner_model, coder_model, vision_model, fast_model]))
@@ -732,7 +732,8 @@ def _run_offline_setup(hw: dict, fallback_prefix: str = "") -> dict:
                          ("Vision", vision_model), ("Fast", fast_model)]:
             r = results.get(m, {})
             if not r.get("ok"):
-                bench_table.add_row(role, m, "[red]error[/red]", "—")
+                err = str(r.get("error", "unknown"))[:50]
+                bench_table.add_row(role, m, "[red]error[/red]", f"[dim]{err}[/dim]")
                 continue
             tps = r["tps"]
             color  = "green" if tps >= 5 else "yellow" if tps >= 2 else "red"

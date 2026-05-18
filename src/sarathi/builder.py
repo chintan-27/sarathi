@@ -500,6 +500,8 @@ Reveal.initialize({{
 
 def _extract_json(text: str) -> dict:
     text = text.strip()
+
+    # Strip markdown fence
     fence = re.search(r"```(?:json)?\s*(\{.*)", text, re.DOTALL | re.IGNORECASE)
     if fence:
         inner = fence.group(1)
@@ -508,12 +510,37 @@ def _extract_json(text: str) -> dict:
             inner = inner[:closing]
         text = inner.strip()
 
+    # Isolate the outermost { ... }
     start = text.find("{")
-    end = text.rfind("}") + 1
+    end   = text.rfind("}") + 1
     if start != -1 and end > start:
         text = text[start:end]
 
-    return json.loads(text)
+    # Try strict parse first
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Clean up common LLM slop and retry:
+    # 1. strip // line comments
+    text = re.sub(r"//[^\n]*", "", text)
+    # 2. strip /* block comments */
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    # 3. remove trailing commas before } or ]
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+    # 4. if JSON is truncated, close open structures so we get partial data
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Count unclosed braces/brackets and close them
+        depth_brace  = text.count("{") - text.count("}")
+        depth_bracket = text.count("[") - text.count("]")
+        # Remove any trailing incomplete string or value
+        text = re.sub(r',?\s*"[^"]*$', "", text)
+        text = re.sub(r',?\s*\w+\s*$',  "", text)
+        text += "]" * max(depth_bracket, 0) + "}" * max(depth_brace, 0)
+        return json.loads(text)
 
 
 def _extract_section(text: str) -> str:
@@ -1199,43 +1226,65 @@ def _chat_via_openai(model: str, system: str, user: str, verbose: bool = False) 
         from rich.console import Console as _C
         _C().print(f"  [dim][cloud] {url} · model={model}[/dim]")
 
-    chunks: list[str] = []
-    out_tokens = 0
-    t0 = time.perf_counter()
     est_in = (len(system) + len(user)) // 4
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user",   "content": user},
+    ]
 
-    stream = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user",   "content": user},
-        ],
-        stream=True,
-    )
-    for chunk in stream:
-        delta = chunk.choices[0].delta if chunk.choices else None
-        if delta and delta.content:
-            chunks.append(delta.content)
-            out_tokens += 1
-            if out_tokens % 10 == 0:
-                elapsed = time.perf_counter() - t0
-                tps = out_tokens / max(elapsed, 0.1)
-                bar_full = min(out_tokens // 20, 30)
-                bar = "█" * bar_full + "░" * (30 - bar_full)
-                sys.stdout.write(
-                    f"\r  [{bar}]  out {out_tokens}  {tps:.1f} tok/s  {elapsed:.0f}s" + " " * 20
-                )
+    # Retry with backoff on rate-limit (429) or transient server errors (5xx)
+    _MAX_RETRIES = 3
+    for attempt in range(_MAX_RETRIES):
+        try:
+            chunks: list[str] = []
+            out_tokens = 0
+            t0 = time.perf_counter()
+
+            stream = client.chat.completions.create(
+                model=model, messages=messages, stream=True,
+            )
+            for chunk in stream:
+                delta = chunk.choices[0].delta if chunk.choices else None
+                if delta and delta.content:
+                    chunks.append(delta.content)
+                    out_tokens += 1
+                    if out_tokens % 10 == 0:
+                        elapsed = time.perf_counter() - t0
+                        tps = out_tokens / max(elapsed, 0.1)
+                        bar_full = min(out_tokens // 20, 30)
+                        bar = "█" * bar_full + "░" * (30 - bar_full)
+                        sys.stdout.write(
+                            f"\r  [{bar}]  out {out_tokens}  {tps:.1f} tok/s  {elapsed:.0f}s" + " " * 20
+                        )
+                        sys.stdout.flush()
+
+            elapsed = time.perf_counter() - t0
+            tps = out_tokens / max(elapsed, 0.001)
+            sys.stdout.write("\r" + " " * 100 + "\r")
+            sys.stdout.flush()
+            print(f"  ✓  ~{est_in:,} in  ·  {out_tokens} out  ·  {tps:.1f} tok/s  ·  {elapsed:.0f}s")
+
+            global _last_gen_tps
+            _last_gen_tps = tps
+            return "".join(chunks)
+
+        except Exception as exc:
+            status = getattr(exc, "status_code", None) or getattr(getattr(exc, "response", None), "status_code", None)
+            is_rate_limit = status == 429 or "rate" in str(exc).lower()
+            is_server_err = status and status >= 500
+
+            if (is_rate_limit or is_server_err) and attempt < _MAX_RETRIES - 1:
+                wait = 2 ** (attempt + 1)  # 2s, 4s
+                sys.stdout.write("\r" + " " * 100 + "\r")
                 sys.stdout.flush()
-
-    elapsed = time.perf_counter() - t0
-    tps = out_tokens / max(elapsed, 0.001)
-    sys.stdout.write("\r" + " " * 100 + "\r")
-    sys.stdout.flush()
-    print(f"  ✓  ~{est_in:,} in  ·  {out_tokens} out  ·  {tps:.1f} tok/s  ·  {elapsed:.0f}s")
-
-    global _last_gen_tps
-    _last_gen_tps = tps
-    return "".join(chunks)
+                from rich.console import Console as _C
+                _C().print(
+                    f"  [yellow]⚠ Rate limit / server error (attempt {attempt+1}/{_MAX_RETRIES}) "
+                    f"— retrying in {wait}s...[/yellow]"
+                )
+                time.sleep(wait)
+            else:
+                raise
 
 
 def _chat(model: str, system: str, user: str, verbose: bool = False) -> str:

@@ -1919,9 +1919,11 @@ setInterval(pollStatus, 5000);
 
     @app.route("/open")
     def open_file():
+        from flask import send_file as _send_file
         path = request.args.get("path", "")
-        if path and Path(path).exists():
-            return redirect(f"file://{path}")
+        p = Path(path)
+        if path and p.exists() and p.suffix in (".html", ".pdf"):
+            return _send_file(p, mimetype="text/html" if p.suffix == ".html" else "application/pdf")
         return "Not found", 404
 
     @app.route("/api/status")

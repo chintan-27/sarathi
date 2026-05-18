@@ -342,27 +342,61 @@ def check_playwright() -> bool:
 
 # ── Cloud API setup ────────────────────────────────────────────────────────────
 
-def _setup_cloud_api() -> "dict | None":
-    """Interactive cloud API setup. Returns config dict on success, None if skipped."""
-    console.print()
-    console.print(Panel(
-        "[bold]Do you have an OpenAI-compatible cloud API?[/bold]\n"
-        "[dim]e.g. university proxy, Azure OpenAI, LiteLLM, together.ai[/dim]\n\n"
-        "[dim]Press Enter to skip and use local Ollama instead.[/dim]",
-        border_style="cyan", title="Cloud API (optional)"
-    ))
+# ── Cloud role suggestion ──────────────────────────────────────────────────────
 
-    url = console.input("  [bold]API URL[/bold] [dim](Enter to skip)[/dim]: ").strip()
+_ROLE_KEYWORDS: dict[str, list[str]] = {
+    "planner": ["70b", "120b", "large", "llama-3.3", "llama-3.1-70", "gemma-3-27",
+                "gpt-4", "claude-3", "nemotron-3-super", "mistral-large"],
+    "coder":   ["coder", "codestral", "code", "deepseek-coder", "qwen-coder",
+                "qwen2.5-coder", "gpt-oss"],
+    "vision":  ["vision", "vl", "gemma-3", "gpt-4o", "claude-3", "llava", "minicpm"],
+    "fast":    ["8b", "7b", "3b", "mini", "small", "nano", "mistral-7b",
+                "granite-3.3-8b", "llama-3.1-8b"],
+}
+_IMG_KEYWORDS = ["flux", "dall-e", "stable-diffusion", "imagen", "playground"]
+_SKIP_KEYWORDS = ["embed", "whisper", "kokoro", "tts", "asr"]
+
+
+def _suggest_cloud_roles(model_ids: list[str]) -> dict:
+    """Auto-score models and suggest the best for each agent role."""
+    skip = lambda m: any(k in m.lower() for k in _SKIP_KEYWORDS)
+    img  = lambda m: any(k in m.lower() for k in _IMG_KEYWORDS)
+
+    llm_models = [m for m in model_ids if not skip(m) and not img(m)]
+    img_models  = [m for m in model_ids if img(m)]
+
+    if not llm_models:
+        return {}
+
+    def _score(model_id: str, keywords: list[str]) -> int:
+        s = model_id.lower()
+        return sum(10 for k in keywords if k in s)
+
+    suggestions: dict[str, str] = {}
+    for role, kws in _ROLE_KEYWORDS.items():
+        scored = sorted(llm_models, key=lambda m: _score(m, kws), reverse=True)
+        suggestions[role] = scored[0]
+
+    suggestions["image_gen"] = img_models[0] if img_models else ""
+    return suggestions
+
+
+# ── Cloud setup flow ───────────────────────────────────────────────────────────
+
+def _run_cloud_setup() -> "dict | None":
+    """Interactive cloud API setup. Returns config dict (decrypted key) or None."""
+    console.print()
+    url = console.input(
+        "  [bold]API URL[/bold]  [dim]e.g. https://api.ai.it.ufl.edu  (Enter to skip)[/dim]: "
+    ).strip()
     if not url:
-        console.print("  [dim]Skipping cloud API — using local Ollama.[/dim]\n")
         return None
 
     key = console.input("  [bold]API Key[/bold]: ").strip()
     if not key:
-        console.print("  [yellow]No key entered — skipping cloud API.[/yellow]\n")
+        console.print("  [yellow]No key entered.[/yellow]\n")
         return None
 
-    # Test connection and list models
     console.print(f"  [dim]Connecting to {url}...[/dim]", end="\r")
     try:
         from openai import OpenAI
@@ -371,157 +405,143 @@ def _setup_cloud_api() -> "dict | None":
         model_ids = [m.id for m in (models_resp.data or [])]
     except Exception as exc:
         console.print(f"  [red]✗ Connection failed: {exc}[/red]")
-        console.print("  [dim]Falling back to local Ollama setup.[/dim]\n")
         return None
 
     if not model_ids:
-        console.print("  [yellow]⚠ Connected but no models listed — check your API key.[/yellow]")
-        console.print("  [dim]Falling back to local Ollama setup.[/dim]\n")
+        console.print("  [yellow]⚠ Connected but no models listed.[/yellow]")
         return None
 
     console.print(f"  [green]✓ Connected — {len(model_ids)} model(s) available[/green]   ")
     console.print()
 
-    # Show model table
+    # Categorise and show full model list
+    skip = lambda m: any(k in m.lower() for k in _SKIP_KEYWORDS)
+    img  = lambda m: any(k in m.lower() for k in _IMG_KEYWORDS)
+    llm_models = [m for m in model_ids if not skip(m) and not img(m)]
+    img_models  = [m for m in model_ids if img(m)]
+    other_models = [m for m in model_ids if skip(m)]
+
     model_table = Table(box=box.SIMPLE, show_header=True, padding=(0, 2),
                         header_style="bold cyan")
     model_table.add_column("#", width=4, style="dim")
     model_table.add_column("Model ID", style="bold")
-    for i, mid in enumerate(model_ids[:20], 1):
-        model_table.add_row(str(i), mid)
-    if len(model_ids) > 20:
-        model_table.add_row("…", f"[dim]+{len(model_ids) - 20} more[/dim]")
-    console.print(model_table)
-    console.print("[dim]Enter a number from the table above or type a model ID directly.[/dim]")
+    model_table.add_column("Type", width=12)
 
-    def _pick(role: str, hint: str, default_idx: int) -> str:
-        default_id = model_ids[min(default_idx, len(model_ids) - 1)]
+    for i, mid in enumerate(model_ids, 1):
+        mtype = (
+            "[cyan]image gen[/cyan]" if img(mid)
+            else "[dim]embed/audio[/dim]" if skip(mid)
+            else "[green]LLM[/green]"
+        )
+        model_table.add_row(str(i), mid, mtype)
+
+    console.print(model_table)
+    console.print()
+
+    # Auto-suggest roles
+    suggestions = _suggest_cloud_roles(model_ids)
+    if not suggestions:
+        console.print("  [yellow]Could not determine model roles — please enter manually.[/yellow]")
+        suggestions = {}
+
+    # Show suggestion table and let user confirm or override
+    sug_table = Table(box=box.SIMPLE, show_header=True, padding=(0, 2),
+                      header_style="bold cyan", title="Suggested model roles")
+    sug_table.add_column("Role", width=12)
+    sug_table.add_column("Suggested model", style="bold")
+    sug_table.add_column("", style="dim")
+
+    role_labels = {
+        "planner":   ("Planner",   "narrative outline, reasoning"),
+        "coder":     ("Coder",     "HTML/slide generation"),
+        "vision":    ("Vision",    "image/chart interpretation"),
+        "fast":      ("Fast",      "--fast mode (optional)"),
+        "image_gen": ("Image gen", "AI-generated visuals (optional)"),
+    }
+    for role, (label, hint) in role_labels.items():
+        sug = suggestions.get(role, "—")
+        sug_table.add_row(label, sug if sug else "[dim]—[/dim]", hint)
+    console.print(sug_table)
+
+    accept = Confirm.ask("  Accept all suggestions?", default=True)
+
+    def _pick_role(role: str, label: str, hint: str) -> str:
+        default = suggestions.get(role, model_ids[0] if model_ids else "")
+        if accept:
+            return default
         choice = console.input(
-            f"  [bold]{role}[/bold] [dim]({hint}) — default: [cyan]{default_id}[/cyan][/dim]: "
+            f"  [bold]{label}[/bold] [dim]({hint})[/dim] "
+            f"[dim]Enter # or model name, default=[cyan]{default}[/cyan][/dim]: "
         ).strip()
         if not choice:
-            return default_id
+            return default
         if choice.isdigit():
             idx = int(choice) - 1
-            return model_ids[idx] if 0 <= idx < len(model_ids) else default_id
-        return choice  # typed model ID directly
+            return model_ids[idx] if 0 <= idx < len(model_ids) else default
+        return choice
 
-    planner = _pick("Planner", "narrative outline, strong reasoning", 0)
-    coder   = _pick("Coder",   "HTML/code generation",               -1)
-    fast    = _pick("Fast",    "--fast mode, speed > quality",        -1)
-    vision  = _pick("Vision",  "image understanding (use GPT-4o class)", 0)
+    planner   = _pick_role("planner",   "Planner",   "reasoning, outline")
+    coder     = _pick_role("coder",     "Coder",     "HTML/code generation")
+    vision    = _pick_role("vision",    "Vision",    "image understanding")
+    fast_role = _pick_role("fast",      "Fast",      "--fast mode")
 
-    # Encrypt key before storing
+    # Image gen: only ask if models are available
+    image_gen_model   = ""
+    image_gen_enabled = False
+    if img_models or suggestions.get("image_gen"):
+        img_default = suggestions.get("image_gen", "")
+        if Confirm.ask(
+            f"  Enable AI image generation for slides? "
+            f"[dim](model: {img_default or img_models[0] if img_models else 'n/a'})[/dim]",
+            default=bool(img_default or img_models),
+        ):
+            image_gen_model = img_default or (img_models[0] if img_models else "")
+            image_gen_enabled = True
+
+    # Encrypt and save
     from . import keystore as _ks
+    from . import config as _cfg
     encrypted_key = _ks.encrypt(key)
 
     cloud_cfg = {
-        "backend":        "cloud",
-        "cloud_api_url":  url,
-        "cloud_api_key":  encrypted_key,
-        "planner_model":  planner,
-        "coder_model":    coder,
-        "vision_model":   vision,
-        "fast_model":     fast,
-        "model":          coder,
+        "backend":          "cloud",
+        "cloud_api_url":    url,
+        "cloud_api_key":    encrypted_key,
+        "planner_model":    planner,
+        "coder_model":      coder,
+        "vision_model":     vision,
+        "fast_model":       fast_role,
+        "model":            coder,
+        "image_gen_model":  image_gen_model,
+        "image_gen_enabled": image_gen_enabled,
     }
-
-    from . import config as _cfg
     _cfg.save_global_config(cloud_cfg)
 
     console.print()
+    img_line = (
+        f"  Image gen: [cyan]{image_gen_model}[/cyan] ✓\n"
+        if image_gen_enabled else
+        "  Image gen: [dim]disabled[/dim]\n"
+    )
     console.print(
         f"[green]✓ Cloud API configured.[/green]\n"
-        f"  Backend  : [cyan]cloud[/cyan] ({url})\n"
         f"  Planner  : [cyan]{planner}[/cyan]\n"
         f"  Coder    : [cyan]{coder}[/cyan]\n"
         f"  Vision   : [cyan]{vision}[/cyan]\n"
-        f"  Fast     : [cyan]{fast}[/cyan]"
+        f"  Fast     : [cyan]{fast_role}[/cyan]\n"
+        + img_line
     )
-    return {**cloud_cfg, "cloud_api_key": key}  # return decrypted key for tip display
+    return {**cloud_cfg, "cloud_api_key": key}  # decrypted key for tip display
 
 
-def _show_claude_code_tip(cloud_cfg: dict) -> None:
-    """Print env var instructions for using the same proxy in Claude Code."""
-    url = cloud_cfg.get("cloud_api_url", "")
-    key = cloud_cfg.get("cloud_api_key", "")
-    console.print()
-    console.print(Panel(
-        "[bold]Use the same API in Claude Code[/bold]\n\n"
-        "Add these to your shell profile ([dim]~/.bashrc[/dim] or [dim]~/.zshrc[/dim]):\n\n"
-        f"  [cyan]export ANTHROPIC_BASE_URL={url}[/cyan]\n"
-        f"  [cyan]export ANTHROPIC_API_KEY={key}[/cyan]\n\n"
-        "[dim]Claude Code will route its requests through your proxy.[/dim]",
-        border_style="dim", title="Claude Code integration (optional)"
-    ))
+# ── Offline (Ollama) setup flow ────────────────────────────────────────────────
 
+def _run_offline_setup(hw: dict, fallback_prefix: str = "") -> dict:
+    """Run Ollama model setup. Returns config dict with model role assignments.
 
-# ── Playwright install helper ──────────────────────────────────────────────────
-
-def _setup_playwright() -> None:
-    """Install Playwright chromium if not already present."""
-    console.print("[bold]Checking Playwright (PDF export)...[/bold]")
-    pw_ok = check_playwright()
-    if not pw_ok:
-        console.print("  [dim]Installing Playwright chromium...[/dim]")
-        subprocess.run(
-            [sys.executable, "-m", "playwright", "install", "chromium"],
-            check=False,
-        )
-    else:
-        console.print("  [green]✓ Playwright chromium ready.[/green]")
-    console.print()
-
-
-# ── Main wizard ────────────────────────────────────────────────────────────────
-
-def run() -> None:
-    console.print()
-    console.print(Panel.fit(
-        "[bold cyan]Sarathi Setup[/bold cyan]\n"
-        "[dim]Let's get your environment ready.[/dim]",
-        border_style="cyan",
-    ))
-    console.print()
-
-    # ── Cloud API (offered first — skips Ollama if accepted) ──────────────────
-    cloud_result = _setup_cloud_api()
-    if cloud_result:
-        console.print(
-            "[dim]  Cloud API set as primary backend. "
-            "Ollama will be used as automatic fallback.[/dim]"
-        )
-        if not Confirm.ask(
-            "  Also set up local Ollama models for offline fallback?", default=False
-        ):
-            _setup_playwright()
-            _show_claude_code_tip(cloud_result)
-            console.print("\n[green]✓ Sarathi setup complete![/green]\n")
-            return
-
-    # ── Hardware report ────────────────────────────────────────────────────────
-    console.print("[bold]Detecting your hardware...[/bold]")
-    hw = detect_hardware()
-
-    hw_table = Table(box=box.SIMPLE, show_header=False, padding=(0, 2))
-    hw_table.add_column(style="dim")
-    hw_table.add_column(style="bold")
-    hw_table.add_row("CPU",      hw["cpu_name"])
-    hw_table.add_row("Cores",    str(hw["cpu_cores"]))
-    hw_table.add_row("RAM",      f"{hw['ram_total_gb']:.1f} GB total  ·  "
-                                  f"[green]{hw['ram_avail_gb']:.1f} GB available[/green]")
-    hw_table.add_row("GPU",      hw["gpu_name"])
-    hw_table.add_row("VRAM",     f"{hw['vram_gb']:.1f} GB" if hw["vram_gb"] else "[dim]—[/dim]")
-    hw_table.add_row("OS",       hw["os"])
-    console.print(hw_table)
-
-    if hw["vram_gb"] < 4 and hw["vram_gb"] > 0:
-        console.print("[yellow]  ⚠ GPU VRAM is low — Sarathi will run models on CPU via Ollama.[/yellow]")
-    elif hw["vram_gb"] == 0:
-        console.print("[dim]  Running CPU-only. Cloud models via Ollama are recommended.[/dim]")
-    console.print()
-
-    # ── Ollama install + start ─────────────────────────────────────────────────
+    fallback_prefix: if "fallback_", saves roles as fallback_planner_model etc.
+    """
+    # Ollama install + start
     console.print("[bold]Checking Ollama...[/bold]")
     installed, running, ollama_bin = check_ollama()
 
@@ -529,7 +549,6 @@ def run() -> None:
         console.print("  [yellow]Ollama not found.[/yellow]")
         if Confirm.ask("  Install Ollama now?", default=True):
             _install_ollama(hw["os"])
-            # Re-check after install
             installed, running, ollama_bin = check_ollama()
             if not installed:
                 console.print(
@@ -542,7 +561,7 @@ def run() -> None:
             )
 
     if installed and not running:
-        console.print(f"  [yellow]Ollama installed but not running.[/yellow]")
+        console.print("[yellow]  Ollama installed but not running.[/yellow]")
         if Confirm.ask("  Start ollama serve now (background)?", default=True):
             subprocess.Popen(
                 [ollama_bin, "serve"],
@@ -552,17 +571,13 @@ def run() -> None:
             _, running, _ = check_ollama()
 
     if installed and running:
-        console.print(f"  [green]✓ Ollama running.[/green]")
+        console.print("  [green]✓ Ollama running.[/green]")
     console.print()
 
-    # ── Model selection ────────────────────────────────────────────────────────
-    recommended, others = recommend_models(hw)
-
-    # Detect already-pulled models — store both full "model:tag" and base names
-    # Structure: manifests/<registry>/<namespace>/<model>/<tag>  (tag is a file)
-    already_pulled: set[str] = set()   # full "model:tag" names
-    pulled_bases:   set[str] = set()   # base model names (any tag)
-    pulled_versions: dict[str, list[str]] = {}  # base → [available tags]
+    # Detect already-pulled models
+    already_pulled: set[str] = set()
+    pulled_bases:   set[str] = set()
+    pulled_versions: dict[str, list[str]] = {}
 
     manifests_dir = Path.home() / ".ollama" / "models" / "manifests"
     if manifests_dir.exists():
@@ -570,12 +585,10 @@ def run() -> None:
             if manifest_file.is_file():
                 model_name = manifest_file.parent.name.lower()
                 tag        = manifest_file.name.lower()
-                full_name  = f"{model_name}:{tag}"
-                already_pulled.add(full_name)
+                already_pulled.add(f"{model_name}:{tag}")
                 pulled_bases.add(model_name)
                 pulled_versions.setdefault(model_name, []).append(tag)
 
-    # Fallback: ollama list (requires server running)
     if not already_pulled and installed and running:
         try:
             raw = subprocess.run(
@@ -594,6 +607,9 @@ def run() -> None:
         except Exception:
             pass
 
+    # Model catalogue
+    recommended, others = recommend_models(hw)
+
     console.print("[bold]Available models for your hardware:[/bold]")
     model_table = Table(box=box.SIMPLE, show_header=True, padding=(0, 2),
                         header_style="bold cyan")
@@ -604,23 +620,22 @@ def run() -> None:
     model_table.add_column("Status", width=10)
     model_table.add_column("Notes",  style="dim")
 
-    for i, (name, display, needed, vision, note) in enumerate(recommended, 1):
-        is_cloud   = ":cloud" in name
-        base_name  = name.split(":")[0].lower()
-        tag        = name.split(":")[-1].lower() if ":" in name else "latest"
-        full_lower = f"{base_name}:{tag}"
-        # Exact match first, then base match (different tag available)
+    for i, (name, display, needed, vision_cap, note) in enumerate(recommended, 1):
+        is_cloud  = ":cloud" in name
+        base_name = name.split(":")[0].lower()
+        tag       = name.split(":")[-1].lower() if ":" in name else "latest"
+        full_low  = f"{base_name}:{tag}"
         if is_cloud:
             status = "[green]cloud[/green]"
-        elif full_lower in already_pulled:
+        elif full_low in already_pulled:
             status = "[green]ready[/green]"
         elif base_name in pulled_bases:
-            avail = pulled_versions.get(base_name, [])
+            avail  = pulled_versions.get(base_name, [])
             status = f"[yellow]{base_name}:{avail[0]}[/yellow]"
         else:
             status = "[dim]not pulled[/dim]"
         ram_str = "[green]cloud[/green]" if is_cloud else f"{needed} GB"
-        vis_str = "[cyan]✓[/cyan]" if vision else "[dim]—[/dim]"
+        vis_str = "[cyan]✓[/cyan]" if vision_cap else "[dim]—[/dim]"
         model_table.add_row(str(i), display, ram_str, vis_str, status, note)
 
     console.print(model_table)
@@ -628,238 +643,255 @@ def run() -> None:
         console.print(f"[dim]  {len(others)} model(s) need more RAM.[/dim]")
     console.print()
 
-    # ── Role assignment ────────────────────────────────────────────────────────
+    # Role assignment
     console.print(Panel(
-        "[bold]Sarathi uses four specialized model roles:[/bold]\n\n"
-        "  [cyan]Planner[/cyan]   — narrative outline, reasoning      "
-        "[dim](recommended: gemma3:4b)[/dim]\n"
-        "  [cyan]Coder[/cyan]     — HTML/JS slide rendering            "
-        "[dim](recommended: qwen2.5-coder:3b)[/dim]\n"
-        "  [cyan]Vision[/cyan]    — image/chart interpretation         "
-        "[dim](recommended: gemma3:4b — multimodal)[/dim]\n"
-        "  [cyan]Fast[/cyan]      — single-pass [bold]--fast[/bold] mode (speed > quality)  "
-        "[dim](recommended: qwen2.5:3b or qwen3:1.7b)[/dim]\n\n"
-        "[dim]Enter a number from the table above or type a model name directly.[/dim]",
-        border_style="cyan", title="Model Roles"
+        "[bold]Sarathi uses specialized model roles:[/bold]\n\n"
+        "  [cyan]Planner[/cyan] — narrative outline, reasoning   [dim](gemma3:4b)[/dim]\n"
+        "  [cyan]Coder[/cyan]   — HTML/JS slide rendering         [dim](qwen2.5-coder:3b)[/dim]\n"
+        "  [cyan]Vision[/cyan]  — image/chart interpretation      [dim](gemma3:4b multimodal)[/dim]\n"
+        "  [cyan]Fast[/cyan]    — single-pass --fast mode         [dim](qwen2.5:3b)[/dim]\n\n"
+        "[dim]Enter # from the table or a model name directly.[/dim]",
+        border_style="cyan", title="Model Roles",
     ))
 
-    def _pick_model(role: str, default_name: str, default_display: str) -> str:
-        """Interactively pick and optionally pull a model for a role."""
+    def _pick_model(role: str, default_name: str) -> str:
         choice = console.input(
-            f"  [bold]{role}[/bold] model "
-            f"[dim](Enter for [cyan]{default_name}[/cyan])[/dim]: "
+            f"  [bold]{role}[/bold] [dim](Enter for [cyan]{default_name}[/cyan])[/dim]: "
         ).strip()
-
         if not choice:
             name = default_name
         elif choice.isdigit():
-            idx = int(choice) - 1
+            idx  = int(choice) - 1
             name = recommended[idx][0] if 0 <= idx < len(recommended) else default_name
         else:
             name = choice
 
-        base      = name.split(":")[0].lower()
-        tag       = name.split(":")[-1].lower() if ":" in name else "latest"
-        full      = f"{base}:{tag}"
-        is_cloud  = ":cloud" in name
-        exact_ok  = full in already_pulled or is_cloud
-        base_ok   = base in pulled_bases
-        bin_      = ollama_bin or _ollama_bin()
+        base     = name.split(":")[0].lower()
+        tag      = name.split(":")[-1].lower() if ":" in name else "latest"
+        full     = f"{base}:{tag}"
+        is_cloud = ":cloud" in name
+        exact_ok = full in already_pulled or is_cloud
+        base_ok  = base in pulled_bases
+        bin_     = ollama_bin or _ollama_bin()
 
         if exact_ok:
             console.print(f"    [green]✓ {name} ready.[/green]")
         elif base_ok:
-            # Different tag available — use it instead of pulling again
-            avail_tag  = pulled_versions[base][0]
+            avail_tag   = pulled_versions[base][0]
             actual_name = f"{base}:{avail_tag}"
             console.print(
-                f"    [yellow]⚠ {name} not pulled, but [bold]{actual_name}[/bold] "
-                f"is available — using that.[/yellow]"
+                f"    [yellow]⚠ using [bold]{actual_name}[/bold] (already pulled)[/yellow]"
             )
             name = actual_name
         elif bin_:
             if Confirm.ask(f"    Pull [bold]{name}[/bold] now?", default=True):
-                result = subprocess.run([bin_, "pull", name])
-                if result.returncode == 0:
+                if subprocess.run([bin_, "pull", name]).returncode == 0:
                     console.print(f"    [green]✓ {name} ready.[/green]")
         else:
             console.print(f"    [yellow]Run: ollama pull {name}[/yellow]")
 
         return name
 
-    planner_model = _pick_model("Planner", "gemma3:4b",        "Gemma 3 4B")
-    coder_model   = _pick_model("Coder",   "qwen2.5-coder:3b", "Qwen 2.5 Coder 3B")
-    vision_model  = _pick_model("Vision",  "gemma3:4b",        "Gemma 3 4B")
-    fast_model    = _pick_model("Fast",    "qwen2.5:3b",       "Qwen 2.5 3B")
+    planner_model = _pick_model("Planner", "gemma3:4b")
+    coder_model   = _pick_model("Coder",   "qwen2.5-coder:3b")
+    vision_model  = _pick_model("Vision",  "gemma3:4b")
+    fast_model    = _pick_model("Fast",    "qwen2.5:3b")
 
-    primary_model = coder_model  # used as fallback `model` key
-
-    # ── Vision model check ────────────────────────────────────────────────────
-    _VISION_KEYWORDS = {"vision", "vl", "llava", "minicpm", "gemma3"}
-    has_vision = any(
-        any(kw in m.lower() for kw in _VISION_KEYWORDS)
-        for m in pulled_bases
-    )
-
+    # Vision check
+    _VIS_KW = {"vision", "vl", "llava", "minicpm", "gemma3"}
+    has_vision = any(any(kw in m for kw in _VIS_KW) for m in pulled_bases)
     if not has_vision:
         console.print()
-        console.print(
-            "[yellow]⚠ No vision model detected.[/yellow] "
-            "Sarathi uses a vision model to read charts and images in your projects.\n"
-            "  [dim]Recommended: [bold]gemma3:12b[/bold] (multimodal) or "
-            "[bold]llama3.2-vision[/bold][/dim]"
-        )
+        console.print("[yellow]⚠ No vision model pulled yet.[/yellow]")
         bin_ = ollama_bin or _ollama_bin()
-        if bin_ and Confirm.ask("  Pull gemma3:12b (vision) now?", default=True):
+        if bin_ and Confirm.ask("  Pull gemma3:12b (multimodal, vision) now?", default=True):
             subprocess.run([bin_, "pull", "gemma3:12b"])
-            already_pulled.add("gemma3")
-            console.print("  [green]✓ gemma3:12b ready — vision support enabled.[/green]")
-    else:
-        vision_models = [m for m in pulled_bases
-                         if any(kw in m.lower() for kw in _VISION_KEYWORDS)]
-        console.print(
-            f"  [green]✓ Vision model available:[/green] "
-            f"[bold]{', '.join(vision_models)}[/bold]"
-        )
+            console.print("  [green]✓ gemma3:12b ready.[/green]")
     console.print()
 
-    # ── Save model roles to global config ────────────────────────────────────
-    import json
-    global_cfg_dir = Path.home() / ".config" / "sarathi"
-    global_cfg_dir.mkdir(parents=True, exist_ok=True)
-    global_cfg = global_cfg_dir / "config.json"
-    existing = {}
-    if global_cfg.exists():
-        try:
-            existing = json.loads(global_cfg.read_text())
-        except Exception:
-            pass
-    existing.update({
-        "model":         primary_model,
-        "planner_model": planner_model,
-        "coder_model":   coder_model,
-        "vision_model":  vision_model,
-        "fast_model":    fast_model,
-    })
-    global_cfg.write_text(json.dumps(existing, indent=2), encoding="utf-8")
-    console.print(
-        f"\n[green]✓ Model roles saved to ~/.config/sarathi/config.json[/green]\n"
-        f"  Planner : [cyan]{planner_model}[/cyan]\n"
-        f"  Coder   : [cyan]{coder_model}[/cyan]\n"
-        f"  Vision  : [cyan]{vision_model}[/cyan]\n"
-        f"  Fast    : [cyan]{fast_model}[/cyan]"
-    )
-
-    # ── Auto-benchmark ─────────────────────────────────────────────────────────
+    # Benchmark
     if installed and running:
-        console.print()
         console.print("[bold]Benchmarking your models...[/bold]")
-        console.print("[dim]  Sending a short prompt to each model to measure speed.[/dim]\n")
+        console.print("[dim]  Measuring cold-start speed for each role.[/dim]\n")
+        unique_models = list(dict.fromkeys([planner_model, coder_model, vision_model, fast_model]))
+        _ROLE_TOKENS = {"Planner": 400, "Coder": 5000, "Vision": 200, "Fast": 1500}
 
-        unique_models = list(dict.fromkeys(
-            [planner_model, coder_model, vision_model, fast_model]
-        ))
         bench_table = Table(box=box.SIMPLE, show_header=True, padding=(0, 2),
                             header_style="bold cyan")
         bench_table.add_column("Role")
         bench_table.add_column("Model", style="bold")
         bench_table.add_column("Speed",   justify="right")
-        bench_table.add_column("Latency", justify="right")
-        bench_table.add_column("Est. presentation", justify="right")
+        bench_table.add_column("Est. time", justify="right")
 
         results: dict[str, dict] = {}
         for m in unique_models:
-            if ":cloud" in m:
-                results[m] = {"tps": 999, "latency": 0, "ok": True}
-                continue
             console.print(f"  [dim]Testing {m}...[/dim]", end="\r")
             results[m] = benchmark_model(m)
 
-        role_rows = [
-            ("Planner", planner_model),
-            ("Coder",   coder_model),
-            ("Vision",  vision_model),
-            ("Fast",    fast_model),
-        ]
-        # Token estimates per role for a 10-slide presentation
-        _ROLE_TOKENS = {
-            "Planner": 400,            # outline JSON: ~400 tokens
-            "Coder":   500 * 10,       # HTML per slide × 10 slides
-            "Vision":  200,            # image descriptions (optional)
-            "Fast":    1500,           # single-pass: full HTML in one call
-        }
-
-        for role, m in role_rows:
+        for role, m in [("Planner", planner_model), ("Coder", coder_model),
+                         ("Vision", vision_model), ("Fast", fast_model)]:
             r = results.get(m, {})
             if not r.get("ok"):
-                err = str(r.get("error", ""))[:40]
-                bench_table.add_row(role, m, f"[red]error[/red]", f"[dim]{err}[/dim]", "—")
+                bench_table.add_row(role, m, "[red]error[/red]", "—")
                 continue
-
             tps = r["tps"]
-            lat = r["latency"]
-
-            if ":cloud" in m:
-                tps_str = "[green]cloud[/green]"
-                lat_str = "[dim]—[/dim]"
-                est_str = "[green]~1-3 min[/green]"
-            else:
-                color   = "green" if tps >= 5 else "yellow" if tps >= 2 else "red"
-                tps_str = f"[{color}]{tps:.1f} tok/s[/{color}]"
-                lat_str = f"[dim]{lat:.1f}s[/dim]"
-                tokens  = _ROLE_TOKENS.get(role, 500)
-                est_min = tokens / max(tps, 0.1) / 60
-                color2  = "green" if est_min < 5 else "yellow" if est_min < 20 else "red"
-                est_str = f"[{color2}]~{est_min:.0f} min[/{color2}]"
-
-            bench_table.add_row(role, m, tps_str, lat_str, est_str)
+            color  = "green" if tps >= 5 else "yellow" if tps >= 2 else "red"
+            tokens = _ROLE_TOKENS.get(role, 500)
+            est_m  = tokens / max(tps, 0.1) / 60
+            color2 = "green" if est_m < 5 else "yellow" if est_m < 20 else "red"
+            bench_table.add_row(
+                role, m,
+                f"[{color}]{tps:.1f} tok/s[/{color}]",
+                f"[{color2}]~{est_m:.0f} min[/{color2}]",
+            )
 
         console.print()
         console.print(bench_table)
-        console.print(
-            "\n[dim]Tip: if speeds are < 2 tok/s, use [bold]sarathi join --fast[/bold] "
-            "for single-pass generation.[/dim]"
-        )
+        console.print()
 
-    # ── How Sarathi uses Ollama ────────────────────────────────────────────────
+    # Save to global config
+    from . import config as _cfg
+    key_prefix = fallback_prefix  # "" for primary, "fallback_" for fallback
+    cfg_data = {
+        f"{key_prefix}model":          coder_model,
+        f"{key_prefix}planner_model":  planner_model,
+        f"{key_prefix}coder_model":    coder_model,
+        f"{key_prefix}vision_model":   vision_model,
+        f"{key_prefix}fast_model":     fast_model,
+    }
+    if not key_prefix:
+        cfg_data["backend"] = "ollama"
+    _cfg.save_global_config(cfg_data)
+
+    label = "fallback model roles" if key_prefix else "model roles"
+    console.print(
+        f"[green]✓ Ollama {label} saved.[/green]\n"
+        f"  Planner : [cyan]{planner_model}[/cyan]\n"
+        f"  Coder   : [cyan]{coder_model}[/cyan]\n"
+        f"  Vision  : [cyan]{vision_model}[/cyan]\n"
+        f"  Fast    : [cyan]{fast_model}[/cyan]"
+    )
+    return cfg_data
+
+
+# ── Helper functions ───────────────────────────────────────────────────────────
+
+def _show_claude_code_tip(cloud_cfg: dict) -> None:
+    url = cloud_cfg.get("cloud_api_url", "")
+    key = cloud_cfg.get("cloud_api_key", "")
     console.print()
     console.print(Panel(
-        "[bold cyan]How Sarathi uses Ollama[/bold cyan]\n\n"
-        "Sarathi calls the Anthropic Python SDK pointed at Ollama's\n"
-        "Anthropic-compatible API at [bold]http://localhost:11434[/bold].\n"
-        "No Anthropic account or API key needed — everything runs locally.\n\n"
-        "[bold]Just make sure Ollama is running and your model is pulled:[/bold]\n"
-        "  [cyan]ollama serve[/cyan]\n"
-        "  [cyan]ollama pull qwen3.5[/cyan]\n"
-        "  [cyan]sarathi track myproject/[/cyan]\n\n"
-        "[dim]Sarathi auto-configures the API endpoint — no env vars needed.[/dim]",
-        border_style="cyan",
+        "[bold]Use the same API in Claude Code[/bold]\n\n"
+        "Add to your shell profile ([dim]~/.bashrc[/dim] or [dim]~/.zshrc[/dim]):\n\n"
+        f"  [cyan]export ANTHROPIC_BASE_URL={url}[/cyan]\n"
+        f"  [cyan]export ANTHROPIC_API_KEY={key}[/cyan]\n\n"
+        "[dim]Claude Code will route requests through your proxy.[/dim]",
+        border_style="dim", title="Claude Code integration (optional)",
     ))
 
-    # ── Playwright ─────────────────────────────────────────────────────────────
-    console.print()
+
+def _setup_playwright() -> None:
     console.print("[bold]Checking Playwright (PDF export)...[/bold]")
     if Confirm.ask("  Install/verify Playwright Chromium?", default=True):
         result = subprocess.run(
             [sys.executable, "-m", "playwright", "install", "chromium"],
-            capture_output=False
+            capture_output=False,
         )
         if result.returncode == 0:
             console.print("  [green]✓ Chromium ready.[/green]")
         else:
-            console.print("  [yellow]⚠ Playwright install had issues — PDF export may not work.[/yellow]")
+            console.print("  [yellow]⚠ Playwright issues — PDF export may not work.[/yellow]")
+    console.print()
 
-    # ── Claude Code tip (if cloud was configured) ─────────────────────────────
+
+# ── Main wizard ────────────────────────────────────────────────────────────────
+
+def run() -> None:
+    console.print()
+    console.print(Panel.fit(
+        "[bold cyan]Sarathi Setup — v1.0.0[/bold cyan]\n"
+        "[dim]Configure your AI backend and model roles.[/dim]",
+        border_style="cyan",
+    ))
+    console.print()
+
+    # ── Mode selection ─────────────────────────────────────────────────────────
+    console.print(Panel(
+        "[bold]How do you want to run Sarathi?[/bold]\n\n"
+        "  [cyan]1[/cyan]  [bold]Cloud only[/bold]    — OpenAI-compatible API\n"
+        "             [dim](university proxy, Azure OpenAI, together.ai, LiteLLM)[/dim]\n\n"
+        "  [cyan]2[/cyan]  [bold]Offline only[/bold]  — local Ollama models\n"
+        "             [dim](runs entirely on your machine, no internet needed)[/dim]\n\n"
+        "  [cyan]3[/cyan]  [bold]Cloud + Local[/bold] — cloud as primary, Ollama as offline fallback\n"
+        "             [dim](best of both: speed + reliability)[/dim]",
+        border_style="cyan", title="Setup Mode",
+    ))
+
+    while True:
+        mode_input = console.input("  [bold]Choice[/bold] [dim][1/2/3][/dim]: ").strip()
+        if mode_input in ("1", "2", "3"):
+            break
+        console.print("  [yellow]Please enter 1, 2, or 3.[/yellow]")
+    mode = {"1": "cloud", "2": "offline", "3": "both"}[mode_input]
+    console.print()
+
+    # ── Hardware detection (always — useful context) ───────────────────────────
+    console.print("[bold]Detecting your hardware...[/bold]")
+    hw = detect_hardware()
+    hw_table = Table(box=box.SIMPLE, show_header=False, padding=(0, 2))
+    hw_table.add_column(style="dim")
+    hw_table.add_column(style="bold")
+    hw_table.add_row("CPU",   hw["cpu_name"])
+    hw_table.add_row("Cores", str(hw["cpu_cores"]))
+    hw_table.add_row("RAM",   f"{hw['ram_total_gb']:.1f} GB  ·  "
+                               f"[green]{hw['ram_avail_gb']:.1f} GB available[/green]")
+    hw_table.add_row("GPU",   hw["gpu_name"])
+    hw_table.add_row("VRAM",  f"{hw['vram_gb']:.1f} GB" if hw["vram_gb"] else "[dim]—[/dim]")
+    hw_table.add_row("OS",    hw["os"])
+    console.print(hw_table)
+    if hw["vram_gb"] == 0 and mode != "cloud":
+        console.print("[dim]  CPU-only — local models will be slow. Cloud mode is recommended.[/dim]")
+    console.print()
+
+    # ── Run selected mode ──────────────────────────────────────────────────────
+    cloud_result = None
+
+    if mode in ("cloud", "both"):
+        console.print("[bold]Cloud API Setup[/bold]")
+        cloud_result = _run_cloud_setup()
+        if cloud_result is None:
+            if mode == "cloud":
+                console.print(
+                    "[yellow]Cloud setup skipped. Falling back to offline setup.[/yellow]\n"
+                )
+                mode = "offline"
+            else:
+                console.print("[yellow]Cloud setup skipped — continuing with Ollama only.[/yellow]\n")
+                mode = "offline"
+        console.print()
+
+    if mode in ("offline", "both"):
+        label = "Offline Fallback Setup" if mode == "both" else "Offline Setup"
+        console.print(f"[bold]{label}[/bold]")
+        fallback_prefix = "fallback_" if mode == "both" else ""
+        _run_offline_setup(hw, fallback_prefix=fallback_prefix)
+        console.print()
+
+    # ── Playwright ─────────────────────────────────────────────────────────────
+    _setup_playwright()
+
+    # ── Claude Code tip ────────────────────────────────────────────────────────
     if cloud_result:
         _show_claude_code_tip(cloud_result)
 
     # ── Done ───────────────────────────────────────────────────────────────────
     console.print()
     console.print(Panel(
-        "[bold green]✓ Sarathi is ready![/bold green]\n\n"
+        "[bold green]✓ Sarathi v1.0.0 is ready![/bold green]\n\n"
         "Get started:\n"
-        "  [cyan]sarathi arambh \"my-project\" \"what this project is about\"[/cyan]\n"
-        "  [cyan]sarathi portfolio[/cyan]  →  dashboard at localhost:7432\n\n"
-        "[dim]Run [bold]sarathi --help[/bold] to see all commands.[/dim]",
+        "  [cyan]sarathi init[/cyan]  or  [cyan]sarathi join my-project/[/cyan]\n"
+        "  [cyan]sarathi track my-project/[/cyan]  →  watch + auto-generate\n"
+        "  [cyan]sarathi portfolio[/cyan]           →  dashboard at localhost:7432\n\n"
+        "[dim]Run [bold]sarathi --help[/bold] for all commands.[/dim]",
         border_style="green",
     ))

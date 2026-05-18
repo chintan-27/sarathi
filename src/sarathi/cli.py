@@ -400,8 +400,10 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
     vision_model   = project_cfg.get("vision_model")
     fast_model     = project_cfg.get("fast_model")
     theme          = project_cfg.get("theme", "dark-gradient")
-    cloud_api_url  = project_cfg.get("cloud_api_url", "")
-    cloud_api_key  = project_cfg.get("cloud_api_key", "")
+    cloud_api_url     = project_cfg.get("cloud_api_url", "")
+    cloud_api_key     = project_cfg.get("cloud_api_key", "")
+    image_gen_model   = project_cfg.get("image_gen_model", "")
+    image_gen_enabled = project_cfg.get("image_gen_enabled", False)
     output_dir = project_dir / "output"
     output_dir.mkdir(exist_ok=True)
 
@@ -492,6 +494,8 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
                 delta=delta or None,
                 cloud_api_url=cloud_api_url,
                 cloud_api_key=cloud_api_key,
+                image_gen_model=image_gen_model,
+                image_gen_enabled=image_gen_enabled,
             ) or {}
             trk.write_status(project_dir, state="idle")
             trk.log_event(project_dir, "generated",
@@ -1042,6 +1046,8 @@ def _diff_impl(folder: str, from_label: str, to_label: str, model: str | None):
         domain_override="diff",
         cloud_api_url=project_cfg.get("cloud_api_url", ""),
         cloud_api_key=project_cfg.get("cloud_api_key", ""),
+        image_gen_model=project_cfg.get("image_gen_model", ""),
+        image_gen_enabled=project_cfg.get("image_gen_enabled", False),
     )
     console.print(f"[green][sarathi] Diff presentation → {html_out}[/green]")
 

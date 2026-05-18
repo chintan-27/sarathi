@@ -189,13 +189,22 @@ GIT HISTORY GUIDANCE
 - Frequent-change files are the core components — build slides around them
 - Early commits = setup; middle commits = features; recent commits = fixes and polish
 - Uncommitted changes = current state of work, highlight as "where we are now"
+
+═══════════════════════════
+VISION CONTEXT (if present)
+═══════════════════════════
+If a <VisionContext> block is provided, use those descriptions to write specific insights
+for image and chart slides. Reference what the visual ACTUALLY SHOWS — concrete values,
+trends, anomalies — NOT generic phrases like "see the chart" or "results shown above".
+Example: "accuracy plateaued at 94.3% after epoch 28" beats "the training curve shows improvement".
 """
 
 
 def _planner_user(project_name: str, description: str, domain: str,
                   files: list[ResultFile],
                   git_ctx_text: str | None = None,
-                  delta: dict | None = None) -> str:
+                  delta: dict | None = None,
+                  vision_descriptions: "dict[str, str] | None" = None) -> str:
     dc = _DOMAIN_CONFIG.get(domain, _DOMAIN_CONFIG["ml"])
     file_list = "\n".join(f"  - [{f.type}] {f.path}" for f in files)
 
@@ -228,6 +237,15 @@ def _planner_user(project_name: str, description: str, domain: str,
             f"</VersionDelta>\n"
         )
 
+    vision_block = ""
+    if vision_descriptions:
+        lines = "\n".join(
+            f"  {fname}: {desc}"
+            for fname, desc in vision_descriptions.items()
+            if not fname.startswith("/")  # deduplicate path vs filename entries
+        )
+        vision_block = f"\n<VisionContext>\n{lines}\n</VisionContext>\n"
+
     return (
         f"<ProjectContext>\n"
         f"Project: {project_name}\n"
@@ -240,7 +258,8 @@ def _planner_user(project_name: str, description: str, domain: str,
         f"Special instructions: {dc['special']}\n"
         f"</ProjectContext>\n"
         f"{git_block}"
-        f"{delta_block}\n"
+        f"{delta_block}"
+        f"{vision_block}\n"
         f"<ArtifactList>\n{file_list}\n</ArtifactList>\n\n"
         f"Generate the JSON outline now."
     )
@@ -531,55 +550,54 @@ def generate(
     delta: dict | None = None,
     cloud_api_url: str = "",
     cloud_api_key: str = "",
+    image_gen_model: str = "",
+    image_gen_enabled: bool = False,
 ) -> dict:
-    # Activate cloud backend for this generation run (module-level, thread-safe enough for CLI)
-    global _cloud_config
-    _cloud_config = {"cloud_api_url": cloud_api_url, "cloud_api_key": cloud_api_key}
-
-    # Role-specific model routing — fall back to `model` if roles not set
-    _planner = planner_model or model
-    _coder   = coder_model   or model
-    _vision  = vision_model  or model
-    _fast    = fast_model    or _coder  # --fast uses dedicated small model
-
+    import time
     from rich.console import Console
-    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
     from rich.table import Table
     from rich import box as rbox
-    from . import viz as viz_module
-    import time
 
     console = Console()
 
-    # ── Preload models into RAM (Ollama only — skip for cloud backend) ───────────
+    # ── Init ──────────────────────────────────────────────────────────────────
+    global _cloud_config
+    _cloud_config = {"cloud_api_url": cloud_api_url, "cloud_api_key": cloud_api_key}
+
+    _planner = planner_model or model
+    _coder   = coder_model   or model
+    _vision  = vision_model  or model
+    _fast    = fast_model    or _coder
+
     using_cloud = bool(cloud_api_url and cloud_api_key)
+    domain = domain_override or detect_domain(description, files)
 
-    if not using_cloud:
-        unique_models = list(dict.fromkeys(
-            [_fast] if fast else [_planner, _coder] +
-            ([_vision] if _vision != _planner else [])
-        ))
-        console.print()
+    console.print()
+    if using_cloud:
+        console.print(f"[dim][sarathi][/dim] Backend: [cyan]cloud[/cyan] ({cloud_api_url})")
+    console.print(f"[dim][sarathi][/dim] Domain: [cyan]{domain}[/cyan]")
+    console.print()
+
+    # ── Ollama warmup (local only) ─────────────────────────────────────────────
+    if not using_cloud and not fast:
+        unique_models = list(dict.fromkeys([_planner, _coder] +
+                                           ([_vision] if _vision != _planner else [])))
         console.print("[bold][sarathi] Loading models into RAM...[/bold]")
-
         load_table = Table(box=rbox.SIMPLE, show_header=True, padding=(0, 2),
                            header_style="bold cyan")
         load_table.add_column("Role")
         load_table.add_column("Model", style="bold")
         load_table.add_column("Status", justify="right")
         load_table.add_column("Load time", justify="right")
-
         role_map = {_planner: "Planner", _coder: "Coder"}
         if _vision and _vision != _planner:
             role_map[_vision] = "Vision"
-
         try:
             import ollama as _ollama
             _ps = _ollama.ps()
             already_loaded = {getattr(mm, "model", "") for mm in (getattr(_ps, "models", []) or [])}
         except Exception:
             already_loaded = set()
-
         for m in unique_models:
             role = role_map.get(m, "Model")
             if m in already_loaded:
@@ -590,71 +608,34 @@ def generate(
             try:
                 import concurrent.futures as _cf
                 with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
-                    fut = _ex.submit(
-                        _ollama.generate,
-                        model=m, prompt="hi", options={"num_predict": 1}
-                    )
+                    fut = _ex.submit(_ollama.generate, model=m, prompt="hi",
+                                     options={"num_predict": 1})
                     try:
                         fut.result(timeout=90)
-                        load_s = time.perf_counter() - t0
-                        load_table.add_row(role, m, "[green]✓ loaded[/green]", f"[dim]{load_s:.1f}s[/dim]")
+                        load_table.add_row(role, m, "[green]✓ loaded[/green]",
+                                           f"[dim]{time.perf_counter()-t0:.1f}s[/dim]")
                     except _cf.TimeoutError:
-                        load_s = time.perf_counter() - t0
-                        load_table.add_row(role, m, "[yellow]⚠ slow (CPU?)[/yellow]", f"[dim]{load_s:.0f}s+[/dim]")
+                        load_table.add_row(role, m, "[yellow]⚠ slow (CPU?)[/yellow]",
+                                           f"[dim]{time.perf_counter()-t0:.0f}s+[/dim]")
             except Exception as exc:
-                load_s = time.perf_counter() - t0
-                load_table.add_row(role, m, "[red]✗ error[/red]", f"[dim]{str(exc)[:30]}[/dim]")
-
+                load_table.add_row(role, m, "[red]✗ error[/red]",
+                                   f"[dim]{str(exc)[:30]}[/dim]")
         console.print()
         console.print(load_table)
         console.print()
-    else:
-        console.print()
-        console.print(f"[dim][sarathi][/dim] Backend: [cyan]cloud[/cyan] ({cloud_api_url})")
-        console.print()
 
-    # Pre-render CSVs to chart images
-    csv_files = [f for f in files if f.type == "data" and f.filename.endswith(".csv")]
-    if csv_files:
-        console.print(f"[dim][sarathi][/dim] Pre-rendering {len(csv_files)} chart(s)...")
-    viz_files = viz_module.process(files, project_dir)
-    all_files = files + viz_files
-
-    # Context trimming — fast mode or large file sets get aggressive limits
+    # ── Fast mode (single-pass, skip agentic pipeline) ────────────────────────
     if fast:
-        all_files = _trim_context(all_files, max_chars=12000, max_files=10)
-        console.print(
-            f"[dim][sarathi][/dim] Fast mode — using {len(all_files)} file(s) "
-            f"(trimmed for speed)"
-        )
-    elif len(all_files) > 12 or sum(len(f.content) for f in all_files) > 20000:
-        all_files = _trim_context(all_files, max_chars=15000, max_files=12)
-        console.print(
-            f"[dim][sarathi][/dim] Large project — trimmed to {len(all_files)} "
-            f"most relevant file(s)"
-        )
-
-    # Build artifacts lookup
-    artifacts_map: dict[str, ResultFile] = {rf.path: rf for rf in all_files}
-    for rf in all_files:
-        artifacts_map[rf.filename] = rf
-
-    domain = domain_override or detect_domain(description, files)
-    console.print(f"[dim][sarathi][/dim] Domain detected: [cyan]{domain}[/cyan]")
-
-    if fast:
-        console.print(
-            f"[dim][sarathi][/dim] Fast mode — single-pass "
-            f"([bold]{_fast}[/bold])..."
-        )
+        console.print(f"[dim][sarathi][/dim] Fast mode — single-pass ([bold]{_fast}[/bold])...")
+        all_files = _trim_context(files, max_chars=12000, max_files=10)
         t_gen = time.perf_counter()
         html_doc = _generate_single_pass(
             project_name, description, domain, all_files, _fast,
-            theme, git_ctx_text, verbose=verbose, delta=delta
+            theme, git_ctx_text, verbose=verbose, delta=delta,
         )
         duration_s = time.perf_counter() - t_gen
         output_html.write_text(html_doc, encoding="utf-8")
-        console.print(f"[green][sarathi][/green] Presentation ready (single-pass).")
+        console.print("[green][sarathi][/green] Presentation ready (single-pass).")
         return {
             "tok_s": _last_gen_tps,
             "duration_s": round(duration_s, 1),
@@ -662,40 +643,79 @@ def generate(
             "mode": "fast",
         }
 
-    # ── Two-pass: outline → slide-by-slide (better quality) ──────────────────
+    # ═════════════════════════════════════════════════════
+    # AGENTIC PIPELINE  Stage 0 → 1 → 2 → 3 → 4
+    # ═════════════════════════════════════════════════════
+
+    console.print("[bold][sarathi] Agentic pipeline starting...[/bold]")
+    console.print()
+
+    # Stage 0 — Chart Agent
+    console.print("[dim][sarathi] Stage 0 — Chart Agent[/dim]")
+    viz_files = _chart_agent(files, project_dir, console)
+    all_files = files + viz_files
+
+    if len(all_files) > 12 or sum(len(f.content) for f in all_files) > 20000:
+        all_files = _trim_context(all_files, max_chars=15000, max_files=12)
+        console.print(f"  [dim]Trimmed to {len(all_files)} most relevant file(s)[/dim]")
+
+    artifacts_map = _build_artifacts_map(all_files)
+    console.print()
+
+    # Stage 1 — Vision Agent
+    console.print("[dim][sarathi] Stage 1 — Vision Agent[/dim]")
+    vision_descriptions: dict[str, str] = {}
+    if _vision:
+        vision_descriptions = _vision_agent(all_files, _vision, console, verbose)
+    if not vision_descriptions:
+        console.print("  [dim]Vision Agent: no images to analyse[/dim]")
+    console.print()
+
+    # Stage 2 — Planner Agent
+    console.print("[dim][sarathi] Stage 2 — Planner Agent[/dim]")
     if outline_path and outline_path.exists():
-        console.print(f"[dim][sarathi][/dim] Loading outline from {outline_path.name}...")
+        console.print(f"  Loading outline from {outline_path.name}...")
         outline = json.loads(outline_path.read_text(encoding="utf-8"))
     else:
-        console.print(
-            f"[dim][sarathi][/dim] Pass 1 — planning narrative outline "
-            f"([bold]{_planner}[/bold])..."
-        )
+        console.print(f"  Model: [bold]{_planner}[/bold]")
         outline = _generate_outline(
             project_name, description, domain, all_files, _planner, git_ctx_text,
-            verbose=verbose, delta=delta,
+            verbose=verbose, delta=delta, vision_descriptions=vision_descriptions or None,
         )
         n_slides = len(outline.get("slides", []))
-        title = outline.get("title", project_name)
+        title    = outline.get("title", project_name)
         console.print(
-            f"[green][sarathi][/green] Outline ready: [bold]{title}[/bold] "
-            f"— {n_slides} slides planned"
+            f"  [green]✓ Outline ready:[/green] [bold]{title}[/bold] — {n_slides} slides"
         )
         if outline_path:
             outline_path.parent.mkdir(parents=True, exist_ok=True)
             outline_path.write_text(json.dumps(outline, indent=2), encoding="utf-8")
             return {}
+    console.print()
 
+    # Stage 3 — Image Gen Agent (optional)
+    console.print("[dim][sarathi] Stage 3 — Image Gen Agent[/dim]")
+    if image_gen_enabled and image_gen_model and using_cloud:
+        new_arts = _image_gen_agent(
+            outline, artifacts_map, image_gen_model,
+            cloud_api_url, cloud_api_key, console,
+        )
+        artifacts_map.update(new_arts)
+    else:
+        console.print("  [dim]Image Gen: disabled (enable in setup or with image_gen_enabled=True)[/dim]")
+    console.print()
+
+    # Stage 4 — Coder Agent
+    console.print("[dim][sarathi] Stage 4 — Coder Agent[/dim]")
+    console.print(f"  Model: [bold]{_coder}[/bold]")
     slides = outline.get("slides", [])
     slides_html: list[str] = []
-
-    t_gen = time.perf_counter()
     n = len(slides)
+    t_gen = time.perf_counter()
+
     for i, slide in enumerate(slides, 1):
         heading = slide.get("heading", f"Slide {slide.get('id', '')}")
-        console.print(
-            f"[dim][sarathi][/dim] Slide {i}/{n} — [bold]{heading[:60]}[/bold]"
-        )
+        console.print(f"  Slide {i}/{n} — [bold]{heading[:60]}[/bold]")
         try:
             html = _render_slide(slide, artifacts_map, _coder, verbose=verbose)
         except Exception as exc:
@@ -706,26 +726,27 @@ def generate(
         slides_html.append(html)
 
     duration_s = time.perf_counter() - t_gen
-    console.print(f"[green][sarathi][/green] All {len(slides_html)} slides rendered.")
+    console.print(f"  [green]✓ All {len(slides_html)} slides rendered.[/green]")
+    console.print()
 
+    # ── Assemble ───────────────────────────────────────────────────────────────
     html_doc = _assemble(outline.get("title", project_name), slides_html, theme)
     output_html.write_text(html_doc, encoding="utf-8")
 
-    # PPTX — tag each slide with theme so the exporter can use it
     for s in outline.get("slides", []):
         s["_theme"] = theme
     try:
         from . import pptx_exporter
-        pptx_out = output_html.with_suffix(".pptx")
-        pptx_exporter.to_pptx(outline, artifacts_map, pptx_out)
+        pptx_exporter.to_pptx(outline, artifacts_map, output_html.with_suffix(".pptx"))
     except Exception:
-        pass  # PPTX is best-effort; HTML is primary
+        pass
 
+    console.print(f"[green][sarathi] Presentation ready →[/green] {output_html}")
     return {
-        "tok_s": _last_gen_tps,
-        "duration_s": round(duration_s, 1),
+        "tok_s":       _last_gen_tps,
+        "duration_s":  round(duration_s, 1),
         "slide_count": len(slides_html),
-        "mode": "full",
+        "mode":        "agentic",
     }
 
 
@@ -1374,6 +1395,164 @@ def _chat(model: str, system: str, user: str, verbose: bool = False) -> str:
     return _chat_via_ollama(model, system, user, verbose=verbose)
 
 
+# ── Agent helpers ─────────────────────────────────────────────────────────────
+
+def _build_artifacts_map(files: "list[ResultFile]") -> "dict[str, ResultFile]":
+    """Build lookup dict by both full path and filename."""
+    m: dict = {}
+    for rf in files:
+        m[rf.path]     = rf
+        m[rf.filename] = rf
+    return m
+
+
+_VISION_SYSTEM = """\
+You are a visual analyst. Describe this image or chart in 2-3 sentences.
+Focus on: (1) what it shows, (2) the key trend or finding, (3) what it means for the project.
+Be specific — name actual values, axis labels, or categories if visible.
+Output only the description. No preamble, no markdown.
+"""
+
+
+def _vision_agent(
+    files: "list[ResultFile]",
+    model: str,
+    console,
+    verbose: bool = False,
+) -> "dict[str, str]":
+    """Run vision model on image/chart artifacts. Returns path→description dict."""
+    candidates = [
+        rf for rf in files
+        if rf.type in ("image", "svg") and rf.content.startswith("data:")
+    ][:5]  # cap at 5 to limit latency
+
+    if not candidates:
+        return {}
+
+    console.print(
+        f"  [dim]Vision Agent:[/dim] analysing {len(candidates)} image(s)..."
+    )
+    descriptions: dict[str, str] = {}
+
+    for rf in candidates:
+        user_msg = (
+            f"Image file: {rf.filename}\n\n"
+            f"[Image data URI — embedded below]\n{rf.content[:200]}...\n\n"
+            "Describe this image/chart in 2-3 sentences."
+        )
+        try:
+            desc = _chat(model, _VISION_SYSTEM, user_msg, verbose=verbose).strip()
+            if desc:
+                descriptions[rf.path]     = desc
+                descriptions[rf.filename] = desc
+        except Exception:
+            pass  # vision silently skipped if model can't process images
+
+    if descriptions:
+        console.print(
+            f"  [green]✓ Vision Agent:[/green] "
+            f"{len(candidates)} image(s) described"
+        )
+    return descriptions
+
+
+def _chart_agent(
+    files: "list[ResultFile]",
+    project_dir: "Path",
+    console,
+) -> "list[ResultFile]":
+    """Pre-render CSVs to matplotlib charts. Thin wrapper around viz.process()."""
+    from . import viz as viz_module
+
+    csv_count = sum(
+        1 for f in files if f.type == "data" and f.filename.endswith(".csv")
+    )
+    if csv_count:
+        console.print(
+            f"  [dim]Chart Agent:[/dim] rendering {csv_count} CSV(s) → matplotlib charts"
+        )
+
+    charts = viz_module.process(files, project_dir)
+
+    if charts:
+        console.print(
+            f"  [green]✓ Chart Agent:[/green] {len(charts)} chart(s) ready"
+        )
+    return charts
+
+
+def _image_gen_agent(
+    outline: dict,
+    artifacts_map: "dict[str, ResultFile]",
+    image_gen_model: str,
+    cloud_api_url: str,
+    cloud_api_key: str,
+    console,
+) -> "dict[str, ResultFile]":
+    """Generate AI images for slides that lack visual artifacts (FLUX/DALL-E)."""
+    if not (image_gen_model and cloud_api_url and cloud_api_key):
+        return {}
+
+    from openai import OpenAI
+    from . import keystore as _ks
+
+    client = OpenAI(api_key=_ks.decrypt(cloud_api_key), base_url=cloud_api_url)
+
+    # Identify slides that want an image but have no matching artifact
+    candidates = []
+    for slide in outline.get("slides", []):
+        if slide.get("type") not in ("image", "chart"):
+            continue
+        has = any(
+            _lookup_artifact(a, artifacts_map)
+            for a in slide.get("artifacts", [])
+        )
+        if not has:
+            candidates.append(slide)
+
+    candidates = candidates[:3]  # max 3 to keep latency sane
+    if not candidates:
+        return {}
+
+    console.print(
+        f"  [dim]Image Gen Agent:[/dim] generating {len(candidates)} image(s) via {image_gen_model}"
+    )
+    new_artifacts: dict[str, ResultFile] = {}
+
+    for slide in candidates:
+        prompt = (
+            f"Technical illustration: {slide['heading']}. "
+            f"{slide.get('insight', '')[:200]}. "
+            "Clean minimal style, dark background, professional presentation graphic."
+        )
+        try:
+            resp = client.images.generate(
+                model=image_gen_model,
+                prompt=prompt,
+                size="512x512",
+                response_format="b64_json",
+                n=1,
+            )
+            b64  = resp.data[0].b64_json
+            data_uri = f"data:image/png;base64,{b64}"
+            key  = f"_generated_slide_{slide['id']}"
+            rf   = ResultFile(path=key, filename=f"{key}.png",
+                              type="image", content=data_uri)
+            new_artifacts[key] = rf
+            slide.setdefault("artifacts", []).insert(0, key)
+            console.print(
+                f"  [green]✓ Image Gen:[/green] slide {slide['id']} — "
+                f"{slide['heading'][:50]}"
+            )
+        except Exception as exc:
+            console.print(
+                f"  [yellow]⚠ Image Gen:[/yellow] slide {slide['id']} failed "
+                f"({exc.__class__.__name__})"
+            )
+
+    return new_artifacts
+
+
 def _generate_outline(
     project_name: str,
     description: str,
@@ -1383,8 +1562,12 @@ def _generate_outline(
     git_ctx_text: str | None = None,
     verbose: bool = False,
     delta: dict | None = None,
+    vision_descriptions: "dict[str, str] | None" = None,
 ) -> dict:
-    user_msg = _planner_user(project_name, description, domain, files, git_ctx_text, delta=delta)
+    user_msg = _planner_user(
+        project_name, description, domain, files, git_ctx_text,
+        delta=delta, vision_descriptions=vision_descriptions,
+    )
     text = _chat(model, _PLANNER_SYSTEM, user_msg, verbose=verbose)
     return _extract_json(text)
 

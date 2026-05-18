@@ -7,17 +7,31 @@ _GLOBAL_CONFIG_DIR = Path.home() / ".config" / "sarathi"
 _SARATHI_DIR = ".sarathi"
 
 DEFAULTS: dict = {
-    "model":          "qwen2.5-coder:3b",  # fallback if roles not set
-    "planner_model":  "gemma3:4b",          # Pass 1: narrative outline
-    "coder_model":    "qwen2.5-coder:3b",   # Pass 2: HTML/JS rendering
-    "vision_model":   "gemma3:4b",          # image description (multimodal)
-    "fast_model":     "qwen2.5:3b",         # single-pass --fast mode
-    "theme":          "dark-gradient",
-    "domain":         "auto",
-    # Cloud API (OpenAI-compatible) — primary backend when set
-    "backend":        "ollama",             # "cloud" | "ollama"
-    "cloud_api_url":  "",
-    "cloud_api_key":  "",                   # stored encrypted via keystore.py
+    # Backend selection
+    "backend":                "ollama",   # "cloud" | "ollama"
+    "cloud_api_url":          "",
+    "cloud_api_key":          "",         # stored encrypted via keystore.py
+
+    # Model roles — active backend
+    "model":                  "qwen2.5-coder:3b",
+    "planner_model":          "gemma3:4b",
+    "coder_model":            "qwen2.5-coder:3b",
+    "vision_model":           "gemma3:4b",
+    "fast_model":             "qwen2.5:3b",
+    "fast_model_enabled":     True,
+
+    # Image generation (cloud only, optional)
+    "image_gen_model":        "",         # e.g. "flux.1-schnell" — empty = disabled
+    "image_gen_enabled":      False,
+
+    # Ollama fallback models (used when backend="cloud" and cloud call fails)
+    "fallback_planner_model": "",
+    "fallback_coder_model":   "",
+    "fallback_vision_model":  "",
+
+    # Presentation
+    "theme":                  "dark-gradient",
+    "domain":                 "auto",
 }
 
 

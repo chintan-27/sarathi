@@ -144,25 +144,58 @@ SLIDE COUNT & ORDERING
 - Second-to-last: takeaways — 3-5 specific things learned, grounded in actual work
 - Last: next_steps — concrete next actions visible from the current state
 
-═══════════════════
+═══════════════════════════════
+THE SLOGAN TECHNIQUE — MANDATORY
+═══════════════════════════════
+Every slide heading MUST be a complete conclusion or finding — NOT a label or topic.
+
+WRONG: "Results"  →  RIGHT: "The Model Reached 94.3% Accuracy, Beating Baseline by 12 Points"
+WRONG: "Architecture"  →  RIGHT: "Three Microservices Replace the Monolith, Cutting Deploy Time 60%"
+WRONG: "Data Overview"  →  RIGHT: "Churn Spikes on Day 7 — Users Who Skip Onboarding Leave 3× Faster"
+
+If you cannot state a finding for a slide, that content does not deserve its own slide.
+
+════════════════════════════════
+CONTENT-TO-LAYOUT SIGNAL TABLE
+════════════════════════════════
+Match content to slide type using these signals:
+
+Content signal                      → Required type
+Single number / % result            → metric_callout
+Image or chart file present         → image / chart  (NEVER bullets for visual content)
+Two contrasting states / before+after → comparison
+3–6 discrete items / features       → feature_grid
+Sequential stages / steps / process → timeline
+CSV rows / tabular data             → table
+Flowing argument, ≤3 key points     → context
+Summary of learned lessons          → takeaways
+Forward-looking actions             → next_steps
+
+NEVER use "context" (bullets) when another type fits the content.
+MAXIMUM 3 bullet points per context/takeaways/next_steps slide.
+EVERY non-title slide must have ONE dominant visual: a large number, chart, image, or grid.
+
+═══════════════
 SLIDE TYPES
-═══════════════════
-metric_callout → layout_hint "r-fit-text". A real number from the files, big and centred.
-chart/image    → layout_hint "r-stretch". Heading states the conclusion from the visual.
-code           → layout_hint "auto-animate". The most important 5-10 lines — never a whole file.
-comparison     → layout_hint "r-stack". Before vs after — only if both states appear in the files.
-table          → layout_hint "". CSV data as a styled HTML table, max 8 rows, one insight heading.
-takeaways      → 3-5 bullets. Each is a complete sentence with a specific detail.
-context/next_steps → layout_hint "" (default).
+═══════════════
+metric_callout → ONE large number from the files. Heading = what it means.
+chart/image    → Heading = conclusion from the visual (not "Chart of X").
+code           → MAX 2 per deck. 5-8 most important lines only. Never a whole file.
+comparison     → Before vs. after — only if both states appear in the files.
+table          → CSV data, max 8 rows, real column names and values.
+feature_grid   → 3-6 items as grid cards. Each bullet becomes one card (format: "Title: description").
+timeline       → Sequential steps/stages. Each bullet = one step.
+takeaways      → MAX 3 bullets. Each is a complete sentence with a specific detail.
+context/next_steps → MAX 3 bullets. Default for flowing narrative content.
 
 ══════════════════════════════
 SLIDE VARIETY RULES — MANDATORY
 ══════════════════════════════
-1. You MUST use at least 4 different slide types across the deck.
-2. If ANY image or chart file is in the artifact list → you MUST include at least one "image" or "chart" slide.
-3. If ANY CSV file is in the artifact list → you MUST include at least one "metric_callout" slide with a real number from that data, OR a "table" slide.
-4. "code" slides are limited to MAX 2 per deck. Use "metric_callout", "table", or "comparison" instead of dumping code.
-5. NEVER produce a deck where all slides are "context" or bullet-only. That is a failure.
+1. You MUST use at least 5 different slide types across the deck.
+2. If ANY image or chart file in artifacts → MUST include image/chart slide.
+3. If ANY CSV file → MUST include metric_callout or table slide.
+4. If 3+ discrete features/components → MUST include feature_grid slide.
+5. A deck where every slide is "context" bullets is a complete failure.
 
 ══════════════════════════
 INSIGHT QUALITY — EXAMPLES
@@ -271,70 +304,100 @@ _CODER_SYSTEM = """\
 You are a Reveal.js slide author. Write ONE <section> element for the slide described.
 
 OUTPUT: Only the raw <section>...</section> HTML. No prose, no markdown, no explanation.
+First line of your output must be: Visual strategy: [one sentence describing the dominant \
+visual element and why it communicates the slide's message]. Then the HTML.
 
 STRICT RULES:
-1. Add data-auto-animate to every <section>.
-2. Wrap every <li> in class="fragment".
-3. USE THE EXACT HEADING from SlideSpec — never swap it for a generic label like "Results".
-4. Speaker notes: 2-3 sentences referencing specific file names, function names, or commit details.
-5. CODE slides: MAXIMUM 6 LINES. Cut everything else mercilessly. One subtitle sentence after.
-6. Never invent facts not present in the SlideSpec or Artifacts.
-7. No <style> tags. CSS vars available: --accent, --accent2, --fg, --dim
-   Classes: r-fit-text, r-stretch, r-stack, fragment, subtitle, hero-metric
+1. data-auto-animate on every <section>.
+2. class="fragment" on every <li>.
+3. USE THE EXACT HEADING from SlideSpec — never replace with a generic label like "Results".
+4. ALL TEXT IS LEFT-ALIGNED. Add style="text-align:left" to every <ul>, <ol>, and <p> block.
+   Only .hero-metric and title slides may use text-align:center.
+5. CODE slides: MAXIMUM 6 LINES. Cut mercilessly. One subtitle sentence explaining why.
+6. Never invent facts. Use only content from SlideSpec and Artifacts.
+7. No <style> tags. CSS vars: --accent, --fg, --fg2, --dim, --surface, --border
+   CSS classes: r-fit-text, r-stretch, hero-metric, metric-label, metric-desc,
+                subtitle, slide-split, slide-grid, grid-card, timeline-row, t-step, t-num
 
-TEMPLATES BY TYPE — use the one matching the slide type:
+TEMPLATES:
 
 code:
 <section data-auto-animate>
-  <h2>{EXACT HEADING FROM SPEC}</h2>
+  <h2>{EXACT HEADING}</h2>
   <pre><code class="language-python" data-trim data-line-numbers>
-{MAX 6 LINES of the most important code — nothing more}
+{MAX 6 LINES — the most important only}
   </code></pre>
-  <p class="subtitle">{one sentence: why this design decision was made}</p>
-  <aside class="notes">{2-3 specific sentences from the artifacts}</aside>
+  <p class="subtitle" style="text-align:left">{why this design decision matters}</p>
+  <aside class="notes">{2-3 specific sentences referencing file/function names}</aside>
 </section>
 
 comparison:
 <section data-auto-animate>
-  <h2>{EXACT HEADING FROM SPEC}</h2>
-  <div class="r-stack">
-    <div class="fragment fade-out" style="width:100%;text-align:left">
-      <p style="color:var(--dim);font-size:.7em;text-transform:uppercase">Before</p>
-      <p>{specific before state from the artifacts}</p>
+  <h2>{EXACT HEADING}</h2>
+  <div class="slide-split">
+    <div>
+      <p style="color:var(--dim);font-size:.65em;text-transform:uppercase;margin-bottom:.4em">Before</p>
+      <p class="fragment" style="text-align:left">{specific before state}</p>
     </div>
-    <div class="fragment" style="width:100%;text-align:left">
-      <p style="color:var(--accent);font-size:.7em;text-transform:uppercase">After</p>
-      <p>{specific after state — what improved}</p>
+    <div>
+      <p style="color:var(--accent);font-size:.65em;text-transform:uppercase;margin-bottom:.4em">After</p>
+      <p class="fragment" style="text-align:left">{specific after state — the improvement}</p>
     </div>
   </div>
-  <aside class="notes">{why this change was made, what the measured impact was}</aside>
+  <aside class="notes">{why this change, measured impact}</aside>
 </section>
 
-table (for CSV data):
+table:
 <section data-auto-animate>
-  <h2>{EXACT HEADING FROM SPEC}</h2>
-  <table style="width:100%;border-collapse:collapse;font-size:.75em">
+  <h2>{EXACT HEADING}</h2>
+  <table style="width:100%;border-collapse:collapse;font-size:.78em;text-align:left">
     <thead><tr style="border-bottom:2px solid var(--accent)">
-      <th style="padding:.4em .8em;text-align:left">{real col name}</th>
-      <th style="padding:.4em .8em;text-align:left">{real col name}</th>
+      <th style="padding:.4em .8em">{col}</th><th style="padding:.4em .8em">{col}</th>
     </tr></thead>
     <tbody>
-      <tr class="fragment"><td style="padding:.35em .8em">{real value}</td><td style="padding:.35em .8em">{real value}</td></tr>
+      <tr class="fragment"><td style="padding:.35em .8em">{val}</td><td style="padding:.35em .8em">{val}</td></tr>
     </tbody>
   </table>
-  <p class="subtitle">{key insight: what pattern or outlier does this table show?}</p>
+  <p class="subtitle" style="text-align:left">{key pattern from this data}</p>
   <aside class="notes">{what action this data suggests}</aside>
 </section>
 
-general content (context, bullets, any other type):
+general content (bullets only — max 3 items):
 <section data-auto-animate>
-  <h2>{EXACT HEADING FROM SPEC}</h2>
-  <ul>
-    <li class="fragment">{specific insight — use the bullet_points from spec verbatim if provided}</li>
-    <li class="fragment">{specific insight}</li>
-    <li class="fragment">{specific insight}</li>
+  <h2>{EXACT HEADING}</h2>
+  <ul style="text-align:left">
+    <li class="fragment">{use bullet_points from spec verbatim}</li>
+    <li class="fragment">{second point}</li>
+    <li class="fragment">{third point — no more than 3}</li>
   </ul>
   <aside class="notes">{2-3 specific sentences}</aside>
+</section>
+
+EXAMPLE (metric_callout — for reference):
+<section data-auto-animate>
+  <p class="metric-label">KEY RESULT</p>
+  <h2 class="r-fit-text hero-metric">94.3%</h2>
+  <p class="metric-desc">Validation accuracy after 28 epochs — 12 points above the baseline</p>
+  <aside class="notes">Loss plateaued at epoch 28 per training_log.txt. The jump from 82% came after adding dropout layers in commit a3f2c1.</aside>
+</section>
+
+EXAMPLE (split layout — code + explanation):
+<section data-auto-animate>
+  <h2>Two-Pass Pipeline Eliminates Context Overflow</h2>
+  <div class="slide-split">
+    <div>
+      <p style="text-align:left;font-size:.82em">The Planner generates a JSON outline in Pass 1. The Coder renders each slide independently in Pass 2 — no slide ever sees the full context.</p>
+      <p class="fragment" style="text-align:left;font-size:.82em">Result: consistent quality regardless of project size.</p>
+    </div>
+    <div>
+      <pre><code class="language-python" data-trim>
+outline = planner(files)
+for slide in outline:
+    html = coder(slide)
+      </code></pre>
+    </div>
+  </div>
+  <aside class="notes">Commit 2baf786 introduced this split. Before: the model would lose early slide context by slide 8. After: every slide is rendered fresh.</aside>
 </section>
 """
 
@@ -398,64 +461,239 @@ def _coder_user(slide: dict, artifacts_map: dict[str, ResultFile]) -> str:
 
 # ── HTML assembly ─────────────────────────────────────────────────────────────
 
-_THEMES: dict[str, str] = {
-    "dark-gradient": """
-        :root {
-            --bg-start: #0d0d1a;
-            --bg-end: #1a1a2e;
-            --accent: #4fc3f7;
-            --accent2: #f48fb1;
-            --fg: #e8e8f0;
-            --dim: #8888aa;
-        }
-        .reveal-viewport { background: linear-gradient(135deg, var(--bg-start), var(--bg-end)); }
-        .reveal { color: var(--fg); font-family: 'Inter', sans-serif; }
-        .reveal h1, .reveal h2, .reveal h3 { color: var(--accent); font-weight: 700; letter-spacing: -0.02em; }
-        .reveal h1 { font-size: 2.2em; }
-        .reveal h2 { font-size: 1.6em; }
-        .reveal section { padding: 40px 60px; }
-        .reveal ul li { margin: 0.4em 0; }
-        .reveal pre code { background: #111122; border-radius: 8px; padding: 1em; }
-        .reveal .controls { color: var(--accent); }
-        .reveal .progress { background: var(--accent2); }
-        .reveal .slide-number { color: var(--dim); }
-        .subtitle { color: var(--dim); font-size: 0.75em; margin-top: 0.3em; }
-        .hero-metric { color: var(--accent); line-height: 1; }
+# Theme skeletons — {accent}, {font_heading}, {font_body} filled by Designer Agent
+_THEME_SKELETONS: dict[str, str] = {
+    "dark-editorial": """
+        :root {{
+            --accent: {accent};
+            --fg: #F0F0F0; --fg2: #A0A0B0; --bg: #0F0F14;
+            --surface: #1A1A24; --border: #2A2A38; --dim: #606070;
+        }}
+        .reveal-viewport {{ background: var(--bg); }}
+        .reveal {{ font-family: '{font_body}', 'Inter', sans-serif; color: var(--fg); text-align: left; }}
+        .reveal .slides section {{
+            text-align: left; padding: 3rem 4rem;
+            display: flex; flex-direction: column; justify-content: flex-start;
+        }}
+        .reveal h1 {{ font-family: '{font_heading}', serif; font-size: clamp(2rem,5vw,3rem);
+            font-weight: 400; line-height: 1.15; color: var(--fg); letter-spacing: -.02em; }}
+        .reveal h2 {{ font-family: '{font_body}', sans-serif; font-size: clamp(1.2rem,3vw,1.75rem);
+            font-weight: 600; color: var(--fg); border-left: 4px solid var(--accent);
+            padding-left: .6em; margin-bottom: .8em; line-height: 1.25; }}
+        .reveal ul, .reveal ol {{ text-align: left; padding-left: 1.4em; margin: 0; width: 100%; }}
+        .reveal ul li, .reveal ol li {{ font-size: .88em; line-height: 1.65; margin: .35em 0; color: var(--fg); }}
+        .reveal ul li::marker {{ color: var(--accent); }}
+        .reveal pre {{ width: 100%; margin: 0; border-radius: 6px; border: 1px solid var(--border); }}
+        .reveal pre code {{ font-size: .72em; background: var(--surface); padding: 1em; line-height: 1.6; }}
+        .reveal .progress {{ background: var(--accent); height: 3px; }}
+        .reveal .controls {{ color: var(--accent); }}
+        .reveal .slide-number {{ color: var(--dim); font-size: .55em; }}
+        .subtitle {{ color: var(--fg2); font-size: .8em; margin-top: .3em; }}
+        .hero-metric {{ font-family: '{font_heading}', serif; font-size: clamp(4rem,15vw,7rem);
+            color: var(--accent); line-height: 1; font-weight: 400; display: block; text-align: center; }}
+        .metric-label {{ font-size: .68em; letter-spacing: .15em; text-transform: uppercase;
+            color: var(--accent); text-align: center; margin-bottom: .4em; }}
+        .metric-desc {{ font-size: .78em; color: var(--fg2); text-align: center; margin-top: .4em; }}
+        .slide-split {{ display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; align-items: start; margin-top: 1rem; }}
+        .slide-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; flex: 1; margin-top: .5rem; }}
+        .grid-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }}
+        .grid-card h4 {{ font-size: .8rem; font-weight: 600; color: var(--accent); margin: 0 0 .3em; }}
+        .grid-card p {{ font-size: .78rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
+        .timeline-row {{ display: flex; gap: 0; margin-top: 1rem; flex: 1; }}
+        .t-step {{ flex: 1; padding: 1rem; border-top: 3px solid var(--border); position: relative; }}
+        .t-step.fragment.visible {{ border-top-color: var(--accent); }}
+        .t-num {{ font-family: '{font_heading}', serif; font-size: 2rem; color: var(--accent);
+            font-weight: 400; display: block; margin-bottom: .3em; }}
+        .t-step p {{ font-size: .78rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
     """,
-    "dracula": """
-        :root { --bg: #282a36; --fg: #f8f8f2; --accent: #bd93f9; --green: #50fa7b; --pink: #ff79c6; }
-        .reveal-viewport { background: var(--bg); }
-        .reveal { color: var(--fg); font-family: 'Inter', sans-serif; }
-        .reveal h1, .reveal h2, .reveal h3 { color: var(--accent); }
-        .reveal .progress { background: var(--green); }
-        .subtitle { color: #6272a4; font-size: 0.75em; }
-        .hero-metric { color: var(--green); }
+    "light-clean": """
+        :root {{
+            --accent: {accent};
+            --fg: #1A1A2E; --fg2: #555570; --bg: #FAFAFA;
+            --surface: #F0F0F5; --border: #DDDDE8; --dim: #999;
+        }}
+        .reveal-viewport {{ background: var(--bg); }}
+        .reveal {{ font-family: '{font_body}', 'Inter', sans-serif; color: var(--fg); text-align: left; }}
+        .reveal .slides section {{
+            text-align: left; padding: 3rem 4rem;
+            display: flex; flex-direction: column; justify-content: flex-start;
+        }}
+        .reveal h1 {{ font-family: '{font_heading}', sans-serif; font-size: clamp(2rem,5vw,3rem);
+            font-weight: 700; color: var(--fg); letter-spacing: -.03em; }}
+        .reveal h2 {{ font-family: '{font_body}', sans-serif; font-size: clamp(1.2rem,3vw,1.7rem);
+            font-weight: 600; color: var(--fg); border-bottom: 2px solid var(--accent);
+            padding-bottom: .25em; margin-bottom: .9em; }}
+        .reveal ul, .reveal ol {{ text-align: left; padding-left: 1.4em; margin: 0; width: 100%; }}
+        .reveal ul li, .reveal ol li {{ font-size: .88em; line-height: 1.7; margin: .3em 0; }}
+        .reveal ul li::marker {{ color: var(--accent); }}
+        .reveal pre code {{ font-size: .72em; background: var(--surface); border: 1px solid var(--border); padding: 1em; border-radius: 6px; line-height: 1.6; }}
+        .reveal .progress {{ background: var(--accent); height: 3px; }}
+        .reveal .controls {{ color: var(--accent); }}
+        .reveal .slide-number {{ color: var(--dim); font-size: .55em; }}
+        .subtitle {{ color: var(--fg2); font-size: .8em; }}
+        .hero-metric {{ font-family: '{font_heading}', sans-serif; font-size: clamp(4rem,15vw,7rem);
+            color: var(--accent); line-height: 1; font-weight: 700; display: block; text-align: center; }}
+        .metric-label {{ font-size: .68em; letter-spacing: .15em; text-transform: uppercase; color: var(--accent); text-align: center; }}
+        .metric-desc {{ font-size: .78em; color: var(--fg2); text-align: center; margin-top: .4em; }}
+        .slide-split {{ display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; align-items: start; margin-top: 1rem; }}
+        .slide-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; flex: 1; margin-top: .5rem; }}
+        .grid-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: .9rem; }}
+        .grid-card h4 {{ font-size: .8rem; font-weight: 700; color: var(--accent); margin: 0 0 .25em; }}
+        .grid-card p {{ font-size: .77rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
+        .timeline-row {{ display: flex; gap: 0; margin-top: 1rem; flex: 1; }}
+        .t-step {{ flex: 1; padding: .9rem; border-top: 3px solid var(--border); }}
+        .t-step.fragment.visible {{ border-top-color: var(--accent); }}
+        .t-num {{ font-family: '{font_heading}', sans-serif; font-size: 2rem; color: var(--accent); font-weight: 700; display: block; margin-bottom: .25em; }}
+        .t-step p {{ font-size: .77rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
     """,
-    "light": """
-        :root { --bg: #fafafa; --fg: #1a1a2e; --accent: #1565c0; }
-        .reveal-viewport { background: var(--bg); }
-        .reveal { color: var(--fg); font-family: 'Inter', sans-serif; }
-        .reveal h1, .reveal h2, .reveal h3 { color: var(--accent); }
-        .reveal section { padding: 40px 60px; }
-        .subtitle { color: #666; font-size: 0.75em; }
-        .hero-metric { color: var(--accent); }
+    "bold-gradient": """
+        :root {{
+            --accent: {accent};
+            --fg: #FFFFFF; --fg2: rgba(255,255,255,.65); --bg-a: #0D0D1A; --bg-b: #1A0A2E;
+            --surface: rgba(255,255,255,.07); --border: rgba(255,255,255,.12); --dim: rgba(255,255,255,.35);
+        }}
+        .reveal-viewport {{ background: linear-gradient(135deg, var(--bg-a), var(--bg-b)); }}
+        .reveal {{ font-family: '{font_body}', 'Inter', sans-serif; color: var(--fg); text-align: left; }}
+        .reveal .slides section {{
+            text-align: left; padding: 3rem 4rem;
+            display: flex; flex-direction: column; justify-content: flex-start;
+        }}
+        .reveal h1 {{ font-family: '{font_heading}', sans-serif; font-size: clamp(2rem,5vw,3rem);
+            font-weight: 800; color: #fff; letter-spacing: -.03em; text-shadow: 0 0 60px {accent}44; }}
+        .reveal h2 {{ font-family: '{font_body}', sans-serif; font-size: clamp(1.2rem,3vw,1.7rem);
+            font-weight: 700; color: #fff; border-left: 4px solid var(--accent);
+            padding-left: .6em; margin-bottom: .8em; }}
+        .reveal ul, .reveal ol {{ text-align: left; padding-left: 1.4em; margin: 0; width: 100%; }}
+        .reveal ul li, .reveal ol li {{ font-size: .88em; line-height: 1.65; margin: .35em 0; }}
+        .reveal ul li::marker {{ color: var(--accent); }}
+        .reveal pre code {{ font-size: .72em; background: rgba(0,0,0,.4); border: 1px solid var(--border); padding: 1em; border-radius: 6px; line-height: 1.6; }}
+        .reveal .progress {{ background: var(--accent); height: 3px; }}
+        .reveal .controls {{ color: var(--accent); }}
+        .reveal .slide-number {{ color: var(--dim); font-size: .55em; }}
+        .subtitle {{ color: var(--fg2); font-size: .8em; }}
+        .hero-metric {{ font-family: '{font_heading}', sans-serif; font-size: clamp(4rem,18vw,9rem);
+            color: var(--accent); line-height: 1; font-weight: 800; display: block; text-align: center;
+            text-shadow: 0 0 80px {accent}66; }}
+        .metric-label {{ font-size: .68em; letter-spacing: .2em; text-transform: uppercase; color: var(--accent); text-align: center; }}
+        .metric-desc {{ font-size: .78em; color: var(--fg2); text-align: center; margin-top: .4em; }}
+        .slide-split {{ display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; align-items: start; margin-top: 1rem; }}
+        .slide-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; flex: 1; margin-top: .5rem; }}
+        .grid-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }}
+        .grid-card h4 {{ font-size: .8rem; font-weight: 700; color: var(--accent); margin: 0 0 .3em; }}
+        .grid-card p {{ font-size: .77rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
+        .timeline-row {{ display: flex; gap: 0; margin-top: 1rem; flex: 1; }}
+        .t-step {{ flex: 1; padding: 1rem; border-top: 3px solid var(--border); }}
+        .t-step.fragment.visible {{ border-top-color: var(--accent); }}
+        .t-num {{ font-family: '{font_heading}', sans-serif; font-size: 2.2rem; color: var(--accent); font-weight: 800; display: block; margin-bottom: .3em; }}
+        .t-step p {{ font-size: .77rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
     """,
-    "minimal": """
-        :root { --bg: #111; --fg: #eee; --accent: #fff; }
-        .reveal-viewport { background: var(--bg); }
-        .reveal { color: var(--fg); font-family: 'Inter', sans-serif; }
-        .reveal h1, .reveal h2, .reveal h3 { color: var(--accent); font-weight: 300; letter-spacing: 0.05em; }
-        .subtitle { color: #888; font-size: 0.75em; }
-        .hero-metric { color: var(--accent); }
+    "minimal-mono": """
+        :root {{
+            --accent: {accent};
+            --fg: #E8E8E8; --fg2: #888; --bg: #111111;
+            --surface: #1C1C1C; --border: #2E2E2E; --dim: #555;
+        }}
+        .reveal-viewport {{ background: var(--bg); }}
+        .reveal {{ font-family: 'JetBrains Mono', '{font_body}', monospace; color: var(--fg); text-align: left; font-size: .9rem; }}
+        .reveal .slides section {{
+            text-align: left; padding: 3rem 4rem;
+            display: flex; flex-direction: column; justify-content: flex-start;
+        }}
+        .reveal h1 {{ font-family: 'JetBrains Mono', monospace; font-size: clamp(1.6rem,4vw,2.4rem);
+            font-weight: 600; color: var(--fg); letter-spacing: -.01em; }}
+        .reveal h1::before {{ content: "# "; color: var(--accent); }}
+        .reveal h2 {{ font-family: 'JetBrains Mono', monospace; font-size: clamp(1rem,2.5vw,1.5rem);
+            font-weight: 500; color: var(--fg); margin-bottom: .9em; }}
+        .reveal h2::before {{ content: "## "; color: var(--accent); }}
+        .reveal ul, .reveal ol {{ text-align: left; padding-left: 1.4em; margin: 0; list-style: none; width: 100%; }}
+        .reveal ul li::before {{ content: "→ "; color: var(--accent); }}
+        .reveal ul li, .reveal ol li {{ font-size: .82em; line-height: 1.7; margin: .3em 0; }}
+        .reveal pre code {{ font-size: .72em; background: var(--surface); border: 1px solid var(--border); padding: 1em; border-radius: 3px; line-height: 1.6; }}
+        .reveal .progress {{ background: var(--accent); height: 2px; }}
+        .reveal .controls {{ color: var(--accent); }}
+        .reveal .slide-number {{ color: var(--dim); font-size: .55em; }}
+        .subtitle {{ color: var(--fg2); font-size: .78em; }}
+        .hero-metric {{ font-family: 'JetBrains Mono', monospace; font-size: clamp(4rem,14vw,7rem);
+            color: var(--accent); line-height: 1; font-weight: 600; display: block; text-align: center; }}
+        .metric-label {{ font-size: .65em; letter-spacing: .15em; text-transform: uppercase; color: var(--dim); text-align: center; }}
+        .metric-desc {{ font-size: .75em; color: var(--fg2); text-align: center; margin-top: .4em; font-family: 'JetBrains Mono', monospace; }}
+        .slide-split {{ display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; align-items: start; margin-top: 1rem; }}
+        .slide-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; flex: 1; margin-top: .5rem; }}
+        .grid-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 3px; padding: .9rem; }}
+        .grid-card h4 {{ font-size: .75rem; font-weight: 600; color: var(--accent); margin: 0 0 .3em; font-family: 'JetBrains Mono', monospace; }}
+        .grid-card p {{ font-size: .75rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
+        .timeline-row {{ display: flex; gap: 0; margin-top: 1rem; flex: 1; }}
+        .t-step {{ flex: 1; padding: .9rem; border-top: 2px solid var(--border); }}
+        .t-step.fragment.visible {{ border-top-color: var(--accent); }}
+        .t-num {{ font-family: 'JetBrains Mono', monospace; font-size: 1.8rem; color: var(--accent); font-weight: 600; display: block; margin-bottom: .3em; }}
+        .t-step p {{ font-size: .75rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
     """,
 }
 
+# Legacy theme aliases — map old names to new ones
+_THEME_ALIASES = {
+    "dark-gradient": "dark-editorial",
+    "dracula":       "dark-editorial",
+    "light":         "light-clean",
+    "minimal":       "minimal-mono",
+}
 
-def _assemble(title: str, slides_html: list[str], theme: str) -> str:
-    theme_css = _THEMES.get(theme, _THEMES["dark-gradient"])
+_DEFAULT_THEME_CONFIG = {
+    "theme":        "dark-editorial",
+    "accent_color": "#6C8EF5",
+    "font_heading": "DM Serif Display",
+    "font_body":    "DM Sans",
+}
+
+# Font pairs for Google Fonts CDN
+_FONT_URLS = {
+    "DM Serif Display": "family=DM+Serif+Display:ital@0;1",
+    "Playfair Display":  "family=Playfair+Display:wght@400;600;700",
+    "Space Grotesk":     "family=Space+Grotesk:wght@400;500;600;700",
+    "Syne":              "family=Syne:wght@400;500;700;800",
+    "DM Sans":           "family=DM+Sans:wght@300;400;500;600;700",
+    "Inter":             "family=Inter:wght@300;400;500;600;700",
+    "Outfit":            "family=Outfit:wght@300;400;500;600;700",
+}
+
+
+def _build_theme_css(theme_config: dict) -> str:
+    """Fill theme skeleton with accent color and font choices from designer agent."""
+    theme = theme_config.get("theme", "dark-editorial")
+    theme = _THEME_ALIASES.get(theme, theme)
+    if theme not in _THEME_SKELETONS:
+        theme = "dark-editorial"
+    skeleton = _THEME_SKELETONS[theme]
+    return skeleton.format(
+        accent=theme_config.get("accent_color", "#6C8EF5"),
+        font_heading=theme_config.get("font_heading", "DM Serif Display"),
+        font_body=theme_config.get("font_body", "DM Sans"),
+    )
+
+
+def _build_font_url(theme_config: dict) -> str:
+    """Build Google Fonts URL for the chosen fonts."""
+    families = set()
+    for key in ("font_heading", "font_body"):
+        f = theme_config.get(key, "")
+        if f in _FONT_URLS:
+            families.add(_FONT_URLS[f])
+    families.add("family=JetBrains+Mono:wght@400;500;600")
+    return "https://fonts.googleapis.com/css2?" + "&".join(sorted(families)) + "&display=swap"
+
+
+def _assemble(title: str, slides_html: list[str],
+              theme: "str | dict" = "dark-editorial") -> str:
+    # Accept either a legacy string theme name or a full theme_config dict
+    if isinstance(theme, str):
+        tc = dict(_DEFAULT_THEME_CONFIG)
+        tc["theme"] = _THEME_ALIASES.get(theme, theme)
+    else:
+        tc = {**_DEFAULT_THEME_CONFIG, **theme}
+
+    theme_css  = _build_theme_css(tc)
+    font_url   = _build_font_url(tc)
     slides_joined = "\n".join(slides_html)
-    from datetime import date
-    today = date.today().strftime("%B %Y")
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -464,7 +702,8 @@ def _assemble(title: str, slides_html: list[str], theme: str) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{title}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="{font_url}" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/reveal.js@4/dist/reveal.css">
 <style>
 {theme_css}
@@ -484,11 +723,11 @@ def _assemble(title: str, slides_html: list[str], theme: str) -> str:
 <script>
 Reveal.initialize({{
   hash: true,
-  slideNumber: true,
-  transition: 'slide',
-  transitionSpeed: 'default',
-  autoAnimateEasing: 'cubic-bezier(0.25, 1, 0.5, 1)',
-  autoAnimateDuration: 0.6,
+  slideNumber: 'c/t',
+  transition: 'fade',
+  transitionSpeed: 'fast',
+  autoAnimateEasing: 'ease-out',
+  autoAnimateDuration: 0.5,
   plugins: [ RevealHighlight, RevealNotes ]
 }});
 </script>
@@ -689,6 +928,13 @@ def generate(
     artifacts_map = _build_artifacts_map(all_files)
     console.print()
 
+    # Stage 0.5 — Designer Agent (theme + accent + fonts)
+    console.print("[dim][sarathi] Stage 0.5 — Designer Agent[/dim]")
+    theme_config = _designer_agent(
+        project_name, domain, description, all_files, _planner, console, verbose
+    )
+    console.print()
+
     # Stage 1 — Vision Agent
     console.print("[dim][sarathi] Stage 1 — Vision Agent[/dim]")
     vision_descriptions: dict[str, str] = {}
@@ -729,7 +975,7 @@ def generate(
         )
         artifacts_map.update(new_arts)
     else:
-        console.print("  [dim]Image Gen: disabled (enable in setup or with image_gen_enabled=True)[/dim]")
+        console.print("  [dim]Image Gen: disabled[/dim]")
     console.print()
 
     # Stage 4 — Coder Agent
@@ -739,29 +985,47 @@ def generate(
     slides_html: list[str] = []
     n = len(slides)
     t_gen = time.perf_counter()
+    repairs = 0
 
     for i, slide in enumerate(slides, 1):
         heading = slide.get("heading", f"Slide {slide.get('id', '')}")
         console.print(f"  Slide {i}/{n} — [bold]{heading[:60]}[/bold]")
         try:
             html = _render_slide(slide, artifacts_map, _coder, verbose=verbose)
+            # Critique Agent — one repair pass if rubric fails
+            failures = _critique_slide(html, slide)
+            if failures:
+                repair_msg = (
+                    _coder_user(slide, artifacts_map) +
+                    "\n\n<Critique>\nFix these issues:\n" +
+                    "\n".join(f"- {f}" for f in failures) +
+                    "\n</Critique>\n\nRepair the slide now."
+                )
+                try:
+                    html = _extract_section(
+                        _chat(_coder, _CODER_SYSTEM, repair_msg, verbose=verbose)
+                    )
+                    repairs += 1
+                except Exception:
+                    pass  # keep original if repair fails
         except Exception as exc:
             html = (
                 f"<section><h2>{heading}</h2>"
-                f"<p style='color:#f48fb1'>Render error: {exc}</p></section>"
+                f"<p style='color:var(--accent,#f48fb1)'>Render error: {exc}</p></section>"
             )
         slides_html.append(html)
 
     duration_s = time.perf_counter() - t_gen
-    console.print(f"  [green]✓ All {len(slides_html)} slides rendered.[/green]")
+    repair_note = f", {repairs} critique repair(s)" if repairs else ""
+    console.print(f"  [green]✓ All {len(slides_html)} slides rendered{repair_note}.[/green]")
     console.print()
 
     # ── Assemble ───────────────────────────────────────────────────────────────
-    html_doc = _assemble(outline.get("title", project_name), slides_html, theme)
+    html_doc = _assemble(outline.get("title", project_name), slides_html, theme_config)
     output_html.write_text(html_doc, encoding="utf-8")
 
     for s in outline.get("slides", []):
-        s["_theme"] = theme
+        s["_theme"] = theme_config.get("theme", "dark-editorial")
     try:
         from . import pptx_exporter
         pptx_exporter.to_pptx(outline, artifacts_map, output_html.with_suffix(".pptx"))
@@ -774,6 +1038,7 @@ def generate(
         "duration_s":  round(duration_s, 1),
         "slide_count": len(slides_html),
         "mode":        "agentic",
+        "theme":       theme_config.get("theme", "dark-editorial"),
     }
 
 
@@ -1318,6 +1583,43 @@ Be specific — name actual values, axis labels, or categories if visible.
 Output only the description. No preamble, no markdown.
 """
 
+_DESIGNER_SYSTEM = """\
+You are a presentation art director. Given a project description and domain, choose the best
+visual theme for a slide deck. Output ONLY a valid JSON object — no prose, no markdown fences.
+
+Theme options:
+  dark-editorial  — near-black bg, serif display headings, colored left-border accent.
+                    Best for: ML research, scientific work, technical deep-dives.
+  light-clean     — white bg, clean sans-serif, colored bottom-border on headings.
+                    Best for: software projects, product demos, business reports.
+  bold-gradient   — deep gradient bg, oversized display font, glowing metric callouts.
+                    Best for: startup pitches, launches, high-energy demos.
+  minimal-mono    — stark dark bg, monospace everything, no decoration.
+                    Best for: developer tools, CLI projects, systems work.
+
+Accent color options (pick ONE that matches the project mood):
+  #6C8EF5  blue-violet   — trustworthy, analytical
+  #F5826C  coral         — energetic, creative
+  #50E3C2  teal          — technical, precise
+  #F5C842  amber         — optimistic, data-driven
+  #C084FC  purple        — innovative, AI/ML
+  #4ADE80  green         — growth, success metrics
+  #FB7185  rose          — bold, design-forward
+
+Font heading options: DM Serif Display, Playfair Display, Space Grotesk, Syne
+Font body options: DM Sans, Inter, Outfit
+
+Output schema:
+{
+  "theme": "dark-editorial | light-clean | bold-gradient | minimal-mono",
+  "accent_color": "#XXXXXX",
+  "accent_color_name": "name",
+  "font_heading": "one of the heading options",
+  "font_body": "one of the body options",
+  "reasoning": "one sentence explaining the choice"
+}
+"""
+
 
 def _vision_agent(
     files: "list[ResultFile]",
@@ -1384,6 +1686,54 @@ def _chart_agent(
             f"  [green]✓ Chart Agent:[/green] {len(charts)} chart(s) ready"
         )
     return charts
+
+
+def _designer_agent(
+    project_name: str,
+    domain: str,
+    description: str,
+    files: "list[ResultFile]",
+    model: str,
+    console,
+    verbose: bool = False,
+) -> dict:
+    """Choose theme, accent colour, and fonts for this deck. Returns theme_config dict."""
+    file_types = list({f.type for f in files})
+    user_msg = (
+        f"Project: {project_name}\n"
+        f"Domain: {domain}\n"
+        f"Description: {description[:300]}\n"
+        f"Files present: {', '.join(file_types)}\n\n"
+        "Choose the best visual theme for this project's slide deck."
+    )
+    try:
+        raw = _chat(model, _DESIGNER_SYSTEM, user_msg, verbose=verbose)
+        tc  = _extract_json(raw)
+        # Validate required keys
+        if tc.get("theme") and tc.get("accent_color"):
+            console.print(
+                f"  [green]✓ Designer Agent:[/green] "
+                f"{tc['theme']} / {tc.get('accent_color_name', tc['accent_color'])} / "
+                f"{tc.get('font_heading','?')} + {tc.get('font_body','?')}"
+                + (f" — {tc['reasoning']}" if tc.get('reasoning') else "")
+            )
+            return tc
+    except Exception as exc:
+        if verbose:
+            console.print(f"  [dim]Designer Agent fallback ({exc})[/dim]")
+    # Fallback: domain-based defaults
+    defaults = {
+        "ml":       {"theme": "dark-editorial",  "accent_color": "#C084FC", "font_heading": "DM Serif Display",  "font_body": "DM Sans"},
+        "software": {"theme": "light-clean",      "accent_color": "#6C8EF5", "font_heading": "Space Grotesk",     "font_body": "Inter"},
+        "data":     {"theme": "dark-editorial",   "accent_color": "#50E3C2", "font_heading": "Playfair Display",  "font_body": "Outfit"},
+        "diff":     {"theme": "minimal-mono",     "accent_color": "#4ADE80", "font_heading": "Space Grotesk",     "font_body": "DM Sans"},
+    }
+    tc = defaults.get(domain, defaults["ml"])
+    console.print(
+        f"  [dim]Designer Agent:[/dim] fallback → "
+        f"{tc['theme']} / {tc['accent_color']}"
+    )
+    return tc
 
 
 def _image_gen_agent(
@@ -1535,20 +1885,86 @@ def _render_slide_nollm(slide: dict, artifacts_map: dict) -> "str | None":
             )
         return None  # no metric found — fall back to LLM
 
-    # Bullet slides — use the planner's bullet_points directly (already grounded in artifacts)
+    # Bullet slides — use the planner's bullet_points directly
     if stype in ("context", "takeaways", "next_steps") and bullets:
-        items = "\n".join(f'    <li class="fragment">{b}</li>' for b in bullets[:5])
+        items = "\n".join(f'    <li class="fragment">{b}</li>' for b in bullets[:3])
         return (
             '<section data-auto-animate>\n'
             f'  <h2>{heading}</h2>\n'
-            '  <ul>\n'
+            '  <ul style="text-align:left">\n'
             f'{items}\n'
             '  </ul>\n'
             f'  <aside class="notes">{notes}</aside>\n'
             '</section>'
         )
 
-    return None  # code, comparison, table, and unplanned bullets go to LLM
+    # Feature grid — 2×2 or 2×3 card layout for 3-6 discrete items
+    if stype == "feature_grid" and bullets:
+        cards = "\n".join(
+            '<div class="grid-card fragment">'
+            f'<h4>{b.split(":", 1)[0].strip() if ":" in b else b[:40]}</h4>'
+            f'<p>{b.split(":", 1)[1].strip() if ":" in b else ""}</p>'
+            '</div>'
+            for b in bullets[:6]
+        )
+        return (
+            '<section data-auto-animate>\n'
+            f'  <h2>{heading}</h2>\n'
+            f'  <div class="slide-grid">\n{cards}\n  </div>\n'
+            f'  <aside class="notes">{notes}</aside>\n'
+            '</section>'
+        )
+
+    # Timeline — horizontal process steps
+    if stype == "timeline" and bullets:
+        steps = "\n".join(
+            f'<div class="t-step fragment">'
+            f'<span class="t-num">{i + 1}</span>'
+            f'<p>{b}</p>'
+            f'</div>'
+            for i, b in enumerate(bullets[:5])
+        )
+        return (
+            '<section data-auto-animate>\n'
+            f'  <h2>{heading}</h2>\n'
+            f'  <div class="timeline-row">\n{steps}\n  </div>\n'
+            f'  <aside class="notes">{notes}</aside>\n'
+            '</section>'
+        )
+
+    return None  # code, comparison, table go to LLM
+
+
+def _critique_slide(html: str, slide: dict) -> "list[str]":
+    """Fast Python rubric check. Returns list of failures (empty = pass)."""
+    failures = []
+    heading = slide.get("heading", "")
+    words   = heading.split()
+
+    # 1. Heading is a label: < 5 words and no action verb
+    action_verbs = {"is","are","was","were","has","have","shows","reveals","achieves",
+                    "cuts","reduces","improves","increases","reaches","demonstrates",
+                    "enables","delivers","eliminates","outperforms","surpasses"}
+    if len(words) < 5 and not any(w.lower() in action_verbs for w in words):
+        failures.append("Heading is a label, not a conclusion (add a finding or result)")
+
+    # 2. Too many bullets
+    if html.count("<li") > 4:
+        failures.append(f"Too many bullets ({html.count('<li')} > 4 max)")
+
+    # 3. Visual slide missing visual anchor
+    stype = slide.get("type", "")
+    if stype in ("image", "chart", "metric_callout"):
+        if "<img" not in html and "hero-metric" not in html:
+            failures.append("Visual slide missing image or metric callout element")
+
+    # 4. Code dump
+    if "<pre>" in html:
+        m = re.search(r"<pre>(.*?)</pre>", html, re.DOTALL)
+        if m and m.group(1).count("\n") > 20:
+            failures.append("Code block > 20 lines (trim to key lines only)")
+
+    return failures
 
 
 def _render_slide(

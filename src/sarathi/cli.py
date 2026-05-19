@@ -501,10 +501,14 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
             trk.log_event(project_dir, "generated",
                           html=str(html_out.relative_to(project_dir)),
                           model=effective_model,
+                          planner_model=planner_model or effective_model,
+                          coder_model=coder_model or effective_model,
+                          vision_model=vision_model or effective_model,
                           tok_s=gen_stats.get("tok_s", 0),
                           duration_s=gen_stats.get("duration_s", 0),
                           slide_count=gen_stats.get("slide_count", 0),
-                          mode=gen_stats.get("mode", "unknown"))
+                          mode=gen_stats.get("mode", "unknown"),
+                          theme=gen_stats.get("theme", ""))
             console.print(f"[green][sarathi] HTML → {html_out}[/green]")
         except Exception as exc:
             console.print(f"[red][sarathi] LLM error: {exc}[/red]")

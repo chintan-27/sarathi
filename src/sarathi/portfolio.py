@@ -509,11 +509,12 @@ def _project_summary(project_dir: Path) -> dict:
         "team":           meta.get("team", "solo"),
         "path":           str(path),
         "model":          meta.get("model") or pcfg.get("model", "—"),
-        "planner_model":  pcfg.get("planner_model", ""),
-        "coder_model":    pcfg.get("coder_model", ""),
-        "vision_model":   pcfg.get("vision_model", ""),
-        "fast_model":     pcfg.get("fast_model", ""),
-        "theme":          pcfg.get("theme", "dark-gradient"),
+        # Prefer models from last generation event — more accurate than config
+        "planner_model":  (next((e for e in reversed(gen_events) if e.get("planner_model")), {}) or {}).get("planner_model") or pcfg.get("planner_model", "—"),
+        "coder_model":    (next((e for e in reversed(gen_events) if e.get("coder_model")),   {}) or {}).get("coder_model")   or pcfg.get("coder_model",   "—"),
+        "vision_model":   (next((e for e in reversed(gen_events) if e.get("vision_model")),  {}) or {}).get("vision_model")  or pcfg.get("vision_model",  "—"),
+        "fast_model":     pcfg.get("fast_model", "—"),
+        "theme":          (next((e for e in reversed(gen_events) if e.get("theme")), {}) or {}).get("theme") or pcfg.get("theme", "dark-gradient"),
         "domain":         meta.get("domain") or pcfg.get("domain", "auto"),
         "created":        created_str[:10],
         "project_age":    project_age,
@@ -603,6 +604,40 @@ def _heatmap_html(timeline_days: dict[str, int]) -> str:
             col_cells.append(f'<div class="heat-cell {lvl}" title="{day}: {n}"></div>')
         cols.append(f'<div class="heat-col">{"".join(col_cells)}</div>')
     return f'<div class="heatmap">{"".join(cols)}</div>'
+
+
+def _global_heatmap_html(all_summaries: list[dict]) -> str:
+    """52-week cross-project activity heatmap for the main portfolio page."""
+    merged: dict[str, int] = {}
+    for s in all_summaries:
+        for day, count in s.get("timeline_days", {}).items():
+            merged[day] = merged.get(day, 0) + count
+
+    today = datetime.now().date()
+    start = today - timedelta(weeks=52)
+    start = start - timedelta(days=start.weekday() + 1)
+
+    cols = []
+    for w in range(52):
+        col_cells = []
+        for d in range(7):
+            day = str(start + timedelta(weeks=w, days=d))
+            n = merged.get(day, 0)
+            lvl = "" if n == 0 else "l1" if n == 1 else "l2" if n <= 3 else "l3" if n <= 6 else "l4"
+            col_cells.append(f'<div class="heat-cell {lvl}" title="{day}: {n} events"></div>')
+        cols.append(f'<div class="heat-col">{"".join(col_cells)}</div>')
+
+    total = sum(merged.values())
+    active_days = sum(1 for v in merged.values() if v > 0)
+    return (
+        f'<div class="global-heatmap">'
+        f'<div class="gh-header">'
+        f'<span>Activity across all projects</span>'
+        f'<span class="gh-meta">{total} events · {active_days} active days · last 52 weeks</span>'
+        f'</div>'
+        f'<div class="heatmap">{"".join(cols)}</div>'
+        f'</div>'
+    )
 
 
 def _feed_html(timeline: list[dict]) -> str:
@@ -1505,11 +1540,19 @@ a { color:inherit; text-decoration:none; }
 /* HEATMAP */
 .heatmap { display:grid; grid-template-columns:repeat(52, 1fr); gap:3px; margin-top:8px; }
 .heat-col { display:grid; grid-template-rows:repeat(7, 1fr); gap:3px; }
-.heat-cell { width:100%; aspect-ratio:1; background:rgba(255,255,255,.06); border-radius:2px; }
+.heat-cell { width:100%; aspect-ratio:1; background:rgba(20,20,20,.07); border-radius:2px; }
+.heat-cell.l1 { background:rgba(23,23,23,.18); }
+.heat-cell.l2 { background:rgba(23,23,23,.38); }
+.heat-cell.l3 { background:rgba(23,23,23,.62); }
+.heat-cell.l4 { background:var(--ink); }
+.panel.dark .heat-cell { background:rgba(255,255,255,.06); }
 .panel.dark .heat-cell.l1 { background:rgba(244,210,74,.22); }
 .panel.dark .heat-cell.l2 { background:rgba(244,210,74,.45); }
 .panel.dark .heat-cell.l3 { background:rgba(244,210,74,.7); }
 .panel.dark .heat-cell.l4 { background:var(--mustard); }
+.global-heatmap { margin:18px 22px 0; padding:16px 18px; background:var(--paper); border:1px solid var(--line); border-radius:4px; }
+.gh-header { display:flex; justify-content:space-between; align-items:center; font-family:var(--mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink); margin-bottom:10px; }
+.gh-meta { color:rgba(20,20,20,.45); font-size:10px; }
 .heat-axis { display:flex; justify-content:space-between; font-family:var(--mono); font-size:10px; letter-spacing:.12em; opacity:.5; margin-top:8px; }
 .heat-legend { display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:10px; opacity:.65; margin-top:8px; }
 .heat-legend .lg { width:10px; height:10px; border-radius:2px; }
@@ -1696,6 +1739,7 @@ def serve(port: int = 7432, extra_dirs: list[str] | None = None) -> None:
         # Wrapped & insight
         wrapped = _compute_weekly_wrapped(summaries)
         insight = _compute_insight(summaries, wrapped)
+        global_heatmap = _global_heatmap_html(summaries)
 
         # Quote of the day
         q_idx = datetime.now().toordinal() % len(_QUOTES)
@@ -1782,6 +1826,8 @@ def serve(port: int = 7432, extra_dirs: list[str] | None = None) -> None:
   </div>
   <button class="wrapped-close" onclick="this.closest('.wrapped').style.display='none'">×</button>
 </div>
+
+{global_heatmap}
 
 <div class="bento" id="bento">{cards_html}</div>
 

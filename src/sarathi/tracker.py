@@ -42,16 +42,38 @@ def _file_hash(path: Path) -> str:
         return ""
 
 
+_DEFAULT_SKIP_DIRS = {".sarathi", "output", ".git", "__pycache__", "node_modules"}
+_MAX_FILE_BYTES = 50 * 1024 * 1024  # skip files larger than 50 MB
+
+
+def _load_skip_dirs(project_dir: Path) -> set[str]:
+    skip = set(_DEFAULT_SKIP_DIRS)
+    pjson = project_dir / "project.json"
+    if pjson.exists():
+        try:
+            import json as _json
+            extra = _json.loads(pjson.read_text(encoding="utf-8")).get("skip_dirs", [])
+            skip.update(extra)
+        except Exception:
+            pass
+    return skip
+
+
 def snapshot_hashes(project_dir: Path) -> dict[str, str]:
+    import os
     hashes: dict[str, str] = {}
-    skip = {".sarathi", "output", ".git", "__pycache__"}
-    for f in sorted(project_dir.rglob("*")):
-        if not f.is_file():
-            continue
-        if any(part in skip for part in f.parts):
-            continue
-        rel = str(f.relative_to(project_dir))
-        hashes[rel] = _file_hash(f)
+    skip = _load_skip_dirs(project_dir)
+    for dirpath, dirnames, filenames in os.walk(project_dir):
+        dirnames[:] = [d for d in dirnames if d not in skip]
+        for fname in sorted(filenames):
+            f = Path(dirpath) / fname
+            try:
+                if f.stat().st_size > _MAX_FILE_BYTES:
+                    continue
+            except OSError:
+                continue
+            rel = str(f.relative_to(project_dir))
+            hashes[rel] = _file_hash(f)
     return hashes
 
 

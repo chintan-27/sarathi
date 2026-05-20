@@ -998,6 +998,369 @@ _THEME_SKELETONS: dict[str, str] = {
         .statement-slide .stmt em {{ color: {accent}; font-style: normal; }}
     """,
 
+    # ── 6. HARVEST ────────────────────────────────────────────────────────────
+    # Screenshots: dark-green creative agency + harvest agriculture bold orange
+    # Deep forest green bg, warm orange accent, photography-card grid, bold Barlow
+    "harvest": """
+        :root {{
+            --accent: {accent};
+            --fg: #f5f0e8; --fg2: #a8c4a0; --bg: #0d2116;
+            --surface: rgba(255,255,255,0.06); --border: rgba(255,255,255,0.12); --dim: #4a7a58;
+        }}
+        .reveal-viewport {{ background: var(--bg); }}
+        .reveal {{ font-family: 'Barlow Condensed', sans-serif; color: var(--fg); }}
+        .reveal .slides section {{
+            text-align: left; padding: 3.5rem 4.5rem;
+            display: flex; flex-direction: column; justify-content: flex-start;
+        }}
+        .reveal h1 {{
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 900;
+            font-size: clamp(3rem,9vw,6.5rem); line-height: .86;
+            letter-spacing: -.01em; text-transform: uppercase; color: var(--fg); margin: 0 0 .4em;
+        }}
+        .reveal h2 {{
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 700;
+            font-size: clamp(1.5rem,3.5vw,2.4rem); line-height: 1.0;
+            letter-spacing: .01em; text-transform: uppercase; color: var(--fg); margin: 0 0 .8em;
+            padding-left: 1rem; border-left: 5px solid {accent};
+        }}
+        .reveal ul, .reveal ol {{ list-style: none; padding: 0; margin: 0; width: 100%; counter-reset: li; }}
+        .reveal li {{
+            counter-increment: li; padding: .65em 0;
+            border-bottom: 1px solid var(--border); font-size: .86em; line-height: 1.5; color: var(--fg);
+            display: grid; grid-template-columns: 2.8rem 1fr; gap: 1rem; align-items: baseline;
+        }}
+        .reveal li::before {{ content: counter(li, decimal-leading-zero); color: {accent}; font-weight: 700; font-size: .9em; }}
+        .reveal pre {{ width: 100%; margin: .5em 0; border-radius: 4px; border: 1px solid var(--border); }}
+        .reveal pre code {{ font-size: .7em; background: rgba(0,0,0,0.4); padding: 1em; line-height: 1.6; }}
+        .reveal .progress {{ background: {accent}; height: 3px; }}
+        .reveal .controls {{ color: {accent}; }}
+        .reveal .slide-number {{ color: var(--dim); font-size: .5em; }}
+        .subtitle {{ color: var(--fg2); font-size: .8em; margin-top: .4em; line-height: 1.4; }}
+        .hero-metric {{
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 900;
+            font-size: clamp(5rem,20vw,12rem); line-height: .82; color: {accent};
+            letter-spacing: -.02em; display: block; text-transform: uppercase;
+        }}
+        .metric-label {{ font-size: .6em; letter-spacing: .2em; text-transform: uppercase; color: var(--fg2); margin-bottom: .3em; }}
+        .metric-desc {{ font-size: .76em; color: var(--fg2); margin-top: .4em; line-height: 1.45; }}
+        .grid-card {{
+            background: var(--surface); border: 1px solid var(--border);
+            border-top: 3px solid {accent}; padding: 1rem; border-radius: 2px;
+        }}
+        .grid-card h4 {{ font-family: 'Barlow Condensed', sans-serif; font-size: .82rem; font-weight: 700; text-transform: uppercase; color: {accent}; margin: 0 0 .3em; letter-spacing: .04em; }}
+        .grid-card p {{ font-size: .74rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
+        .t-num {{ font-family: 'Barlow Condensed', sans-serif; font-size: 2rem; color: {accent}; font-weight: 900; display: block; margin-bottom: .3em; }}
+        .section-divider {{ display: flex; flex-direction: column; justify-content: center; flex: 1; }}
+        .section-divider .sec-num {{ font-family: 'Barlow Condensed', sans-serif; font-weight: 900; font-size: clamp(7rem,24vw,16rem); line-height: .82; color: {accent}; letter-spacing: -.03em; text-transform: uppercase; }}
+        .section-divider .sec-label {{ color: var(--dim); font-size: .6em; letter-spacing: .22em; text-transform: uppercase; margin: .4rem 0 .2rem; }}
+        .section-divider .sec-title {{ font-family: 'Barlow Condensed', sans-serif; font-weight: 900; font-size: clamp(2rem,6vw,4.5rem); line-height: .9; text-transform: uppercase; color: var(--fg); margin: 0; padding-left: 1rem; border-left: 5px solid {accent}; }}
+        .statement-slide {{ display: flex; flex-direction: column; justify-content: center; flex: 1; }}
+        .statement-slide .stmt {{ font-family: 'Barlow Condensed', sans-serif; font-weight: 900; font-size: clamp(2.5rem,7vw,5.5rem); line-height: .88; text-transform: uppercase; color: var(--fg); }}
+        .statement-slide .stmt em {{ color: {accent}; font-style: normal; }}
+    """,
+
+    # ── 7. NEON NOIR ──────────────────────────────────────────────────────────
+    # Screenshots: blue glowing project-proposal + dark teal town-hall
+    # Near-black, electric blue + cyan dual glow, glowing borders, 2025 SaaS energy
+    "neon-noir": """
+        :root {{
+            --accent: {accent};
+            --fg: #e8f4ff; --fg2: rgba(232,244,255,.6); --bg: #050810;
+            --surface: rgba(29,78,216,0.08); --border: rgba(29,78,216,0.35); --dim: rgba(232,244,255,.35);
+            --glow: {accent}55;
+        }}
+        .reveal-viewport {{
+            background: radial-gradient(ellipse at 30% 20%, rgba(29,78,216,0.25) 0%, transparent 55%),
+                         radial-gradient(ellipse at 80% 80%, rgba(6,182,212,0.18) 0%, transparent 50%),
+                         #050810;
+        }}
+        .reveal {{ font-family: 'Space Grotesk', sans-serif; color: var(--fg); }}
+        .reveal .slides section {{
+            text-align: left; padding: 3.5rem 4.5rem;
+            display: flex; flex-direction: column; justify-content: flex-start;
+            border: 1px solid var(--border);
+            box-shadow: inset 0 0 60px rgba(29,78,216,0.05), 0 0 0 1px var(--glow);
+        }}
+        .reveal h1 {{
+            font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+            font-size: clamp(2.8rem,8vw,5.5rem); line-height: .9;
+            letter-spacing: -.04em; color: var(--fg); margin: 0 0 .4em;
+            text-shadow: 0 0 40px {accent}88;
+        }}
+        .reveal h2 {{
+            font-family: 'Space Grotesk', sans-serif; font-weight: 600;
+            font-size: clamp(1.3rem,3vw,2rem); line-height: 1.1;
+            letter-spacing: -.02em; color: var(--fg); margin: 0 0 .85em;
+            border-bottom: 1px solid var(--border); padding-bottom: .4em;
+        }}
+        .reveal ul, .reveal ol {{ list-style: none; padding: 0; margin: 0; width: 100%; counter-reset: li; }}
+        .reveal li {{
+            counter-increment: li; padding: .6em 1rem;
+            margin-bottom: .5rem;
+            background: var(--surface); border: 1px solid var(--border);
+            font-size: .86em; line-height: 1.55; color: var(--fg);
+            display: grid; grid-template-columns: 2.4rem 1fr; gap: .8rem; align-items: baseline;
+        }}
+        .reveal li::before {{ content: counter(li, decimal-leading-zero); color: {accent}; font-size: .8em; font-weight: 600; }}
+        .reveal pre {{ width: 100%; margin: .5em 0; border: 1px solid var(--border); border-radius: 4px; }}
+        .reveal pre code {{ font-size: .7em; background: rgba(0,0,0,0.5); padding: 1em; line-height: 1.6; }}
+        .reveal .progress {{ background: {accent}; height: 2px; box-shadow: 0 0 8px {accent}; }}
+        .reveal .controls {{ color: {accent}; }}
+        .reveal .slide-number {{ color: var(--dim); font-size: .5em; }}
+        .subtitle {{ color: var(--fg2); font-size: .78em; margin-top: .35em; line-height: 1.4; }}
+        .hero-metric {{
+            font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+            font-size: clamp(5rem,18vw,10rem); line-height: .86; color: {accent};
+            letter-spacing: -.05em; display: block;
+            text-shadow: 0 0 60px {accent}88, 0 0 120px {accent}44;
+        }}
+        .metric-label {{ font-size: .6em; letter-spacing: .22em; text-transform: uppercase; color: var(--dim); margin-bottom: .35em; }}
+        .metric-desc {{ background: var(--surface); border: 1px solid var(--border); padding: .75rem 1rem; font-size: .76em; color: var(--fg2); margin-top: .5em; line-height: 1.5; border-radius: 4px; }}
+        .grid-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; }}
+        .grid-card h4 {{ font-size: .78rem; font-weight: 600; color: {accent}; margin: 0 0 .3em; text-shadow: 0 0 12px {accent}66; }}
+        .grid-card p {{ font-size: .72rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
+        .t-num {{ font-size: 2rem; font-weight: 700; color: {accent}; display: block; margin-bottom: .3em; text-shadow: 0 0 20px {accent}66; }}
+        .section-divider {{ display: flex; flex-direction: column; justify-content: center; flex: 1; }}
+        .section-divider .sec-num {{ font-weight: 700; font-size: clamp(6rem,22vw,13rem); line-height: .85; color: {accent}; letter-spacing: -.05em; text-shadow: 0 0 80px {accent}66; opacity: .7; }}
+        .section-divider .sec-label {{ color: var(--dim); font-size: .6em; letter-spacing: .22em; text-transform: uppercase; margin: .3rem 0; }}
+        .section-divider .sec-title {{ font-weight: 600; font-size: clamp(1.8rem,5vw,3.5rem); line-height: .95; color: var(--fg); margin: 0; text-shadow: 0 0 30px {accent}44; }}
+        .statement-slide {{ display: flex; flex-direction: column; justify-content: center; flex: 1; }}
+        .statement-slide .stmt {{ font-weight: 700; font-size: clamp(2rem,6vw,4.5rem); line-height: 1.0; letter-spacing: -.03em; color: var(--fg); text-shadow: 0 0 40px {accent}44; }}
+        .statement-slide .stmt em {{ color: {accent}; font-style: normal; text-shadow: 0 0 30px {accent}; }}
+    """,
+
+    # ── 8. BROADSHEET ─────────────────────────────────────────────────────────
+    # Screenshots: bold "80%" orange blocks + "Document" orange sidebar
+    # Off-white, Archivo Black, bold color sidebar strip, loud numbers, Bloomberg energy
+    "broadsheet": """
+        :root {{
+            --accent: {accent};
+            --fg: #0f0f0f; --fg2: #3d3d3d; --bg: #f7f4ee;
+            --surface: #ede9e0; --border: #0f0f0f; --dim: #888;
+        }}
+        .reveal-viewport {{ background: var(--bg); }}
+        .reveal {{ font-family: 'IBM Plex Sans', sans-serif; color: var(--fg); }}
+        .reveal .slides section {{
+            text-align: left; padding: 3.5rem 4.5rem 3.5rem 7rem;
+            display: flex; flex-direction: column; justify-content: flex-start;
+            border-left: 5.5rem solid {accent};
+        }}
+        .reveal h1 {{
+            font-family: 'Archivo Black', sans-serif; font-weight: 900;
+            font-size: clamp(2.8rem,8vw,6rem); line-height: .86;
+            letter-spacing: -.04em; text-transform: uppercase; color: var(--fg); margin: 0 0 .4em;
+        }}
+        .reveal h2 {{
+            font-family: 'Archivo Black', sans-serif; font-weight: 900;
+            font-size: clamp(1.4rem,3.2vw,2.2rem); line-height: .95;
+            letter-spacing: -.03em; text-transform: uppercase; color: var(--fg); margin: 0 0 .85em;
+        }}
+        .reveal ul, .reveal ol {{ list-style: none; padding: 0; margin: 0; width: 100%; counter-reset: li; }}
+        .reveal li {{
+            counter-increment: li; padding: .75em 0;
+            border-top: 2px solid var(--fg); font-size: .86em; line-height: 1.5; color: var(--fg);
+            display: grid; grid-template-columns: 3rem 1fr; gap: 1rem; align-items: baseline;
+        }}
+        .reveal li:last-child {{ border-bottom: 2px solid var(--fg); }}
+        .reveal li::before {{ content: counter(li); font-family: 'Archivo Black', sans-serif; font-size: 1.5em; line-height: .85; color: {accent}; font-weight: 900; }}
+        .reveal pre {{ width: 100%; margin: .5em 0; border: 2px solid var(--fg); border-radius: 0; }}
+        .reveal pre code {{ font-size: .7em; background: var(--surface); padding: 1em; line-height: 1.6; color: var(--fg); }}
+        .reveal .progress {{ background: {accent}; height: 3px; }}
+        .reveal .controls {{ color: {accent}; }}
+        .reveal .slide-number {{ color: var(--dim); font-size: .5em; font-family: 'IBM Plex Mono', monospace; }}
+        .subtitle {{ font-family: 'IBM Plex Sans', sans-serif; color: var(--fg2); font-size: .8em; margin-top: .4em; line-height: 1.4; }}
+        .hero-metric {{
+            font-family: 'Archivo Black', sans-serif; font-weight: 900;
+            font-size: clamp(5rem,20vw,13rem); line-height: .8; color: {accent};
+            letter-spacing: -.055em; display: block; text-transform: uppercase;
+        }}
+        .metric-label {{ font-family: 'IBM Plex Mono', monospace; font-size: .6em; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); margin-bottom: .3em; }}
+        .metric-desc {{ font-size: .8em; color: var(--fg2); margin-top: .45em; line-height: 1.4; border-left: 3px solid {accent}; padding-left: .8rem; }}
+        .grid-card {{ border-top: 4px solid {accent}; padding-top: .9rem; background: transparent; }}
+        .grid-card h4 {{ font-family: 'Archivo Black', sans-serif; font-size: .78rem; font-weight: 900; text-transform: uppercase; color: var(--fg); margin: 0 0 .3em; letter-spacing: -.01em; }}
+        .grid-card p {{ font-size: .74rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
+        .t-num {{ font-family: 'Archivo Black', sans-serif; font-size: 2rem; color: {accent}; font-weight: 900; display: block; margin-bottom: .3em; letter-spacing: -.03em; }}
+        .section-divider {{
+            display: flex; flex-direction: column; justify-content: center; flex: 1;
+            margin-left: -3.5rem; padding-left: 3.5rem;
+            background: {accent};
+        }}
+        .section-divider .sec-num {{ font-family: 'Archivo Black', sans-serif; font-weight: 900; font-size: clamp(7rem,24vw,16rem); line-height: .8; color: rgba(0,0,0,0.18); letter-spacing: -.06em; text-transform: uppercase; position: absolute; right: 2rem; top: 50%; transform: translateY(-50%); pointer-events: none; }}
+        .section-divider .sec-label {{ font-family: 'IBM Plex Mono', monospace; font-size: .6em; letter-spacing: .22em; text-transform: uppercase; color: rgba(255,255,255,0.6); margin-bottom: .4rem; }}
+        .section-divider .sec-title {{ font-family: 'Archivo Black', sans-serif; font-weight: 900; font-size: clamp(2.5rem,7vw,5.5rem); line-height: .88; text-transform: uppercase; color: #fff; margin: 0; letter-spacing: -.04em; }}
+        .statement-slide {{ display: flex; flex-direction: column; justify-content: center; flex: 1; }}
+        .statement-slide .stmt {{ font-family: 'Archivo Black', sans-serif; font-weight: 900; font-size: clamp(2.5rem,7vw,5.5rem); line-height: .88; text-transform: uppercase; color: var(--fg); letter-spacing: -.04em; }}
+        .statement-slide .stmt em {{ color: {accent}; font-style: normal; }}
+    """,
+
+    # ── 9. OBSIDIAN ───────────────────────────────────────────────────────────
+    # Screenshots: dark charcoal activation strategy with lime green circles + donut metrics
+    # Dark charcoal, lime green accent, circular metric motif, dashboard energy
+    "obsidian": """
+        :root {{
+            --accent: {accent};
+            --fg: #e8ede8; --fg2: #8a9e8a; --bg: #111518;
+            --surface: #1a1f1a; --border: #2a3028; --dim: #4a5a4a;
+        }}
+        .reveal-viewport {{ background: var(--bg); }}
+        .reveal {{ font-family: 'Space Grotesk', sans-serif; color: var(--fg); }}
+        .reveal .slides section {{
+            text-align: left; padding: 3.5rem 4.5rem;
+            display: flex; flex-direction: column; justify-content: flex-start;
+        }}
+        .reveal h1 {{
+            font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+            font-size: clamp(2.8rem,8vw,5.5rem); line-height: .9;
+            letter-spacing: -.04em; color: var(--fg); margin: 0 0 .4em;
+        }}
+        .reveal h2 {{
+            font-family: 'Space Grotesk', sans-serif; font-weight: 600;
+            font-size: clamp(1.3rem,3vw,2rem); line-height: 1.1;
+            letter-spacing: -.025em; color: var(--fg); margin: 0 0 .85em;
+            display: flex; align-items: center; gap: .8rem;
+        }}
+        .reveal h2::before {{ content: ""; display: inline-block; width: .7rem; height: .7rem; background: {accent}; border-radius: 50%; flex-shrink: 0; }}
+        .reveal ul, .reveal ol {{ list-style: none; padding: 0; margin: 0; width: 100%;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-content: start; counter-reset: li; }}
+        .reveal li {{
+            counter-increment: li; background: var(--surface); border: 1px solid var(--border);
+            border-radius: 8px; padding: 1rem 1.1rem;
+            font-size: .84em; line-height: 1.5; color: var(--fg);
+            display: grid; grid-template-columns: 2rem 1fr; gap: .7rem; align-items: baseline;
+        }}
+        .reveal li::before {{ content: counter(li, decimal-leading-zero); color: {accent}; font-size: .8em; font-weight: 600; }}
+        .reveal pre {{ width: 100%; margin: .5em 0; border: 1px solid var(--border); border-radius: 6px; }}
+        .reveal pre code {{ font-size: .7em; background: var(--surface); padding: 1em; line-height: 1.6; }}
+        .reveal .progress {{ background: {accent}; height: 2px; }}
+        .reveal .controls {{ color: {accent}; }}
+        .reveal .slide-number {{ color: var(--dim); font-size: .5em; }}
+        .subtitle {{ color: var(--fg2); font-size: .78em; margin-top: .35em; line-height: 1.4; }}
+        .hero-metric {{
+            font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+            font-size: clamp(5rem,18vw,10rem); line-height: .86; color: {accent};
+            letter-spacing: -.05em; display: block; position: relative;
+        }}
+        /* Circular accent ring behind metric */
+        .hero-metric::before {{
+            content: ""; position: absolute;
+            width: clamp(4rem,14vw,8rem); height: clamp(4rem,14vw,8rem);
+            border: 4px solid {accent}; border-radius: 50%;
+            left: -.2em; top: .05em; opacity: .3;
+        }}
+        .metric-label {{ font-size: .6em; letter-spacing: .18em; text-transform: uppercase; color: var(--dim); margin-bottom: .35em; }}
+        .metric-desc {{ background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: .75rem 1rem; font-size: .76em; color: var(--fg2); margin-top: .5em; line-height: 1.5; }}
+        .grid-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; border-top: 2px solid {accent}; }}
+        .grid-card h4 {{ font-size: .78rem; font-weight: 600; color: {accent}; margin: 0 0 .3em; }}
+        .grid-card p {{ font-size: .72rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
+        .t-step {{ border-top: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }}
+        .t-step.fragment.visible {{ border-color: {accent}; }}
+        .t-num {{ font-size: 2rem; font-weight: 700; color: {accent}; display: block; margin-bottom: .3em; }}
+        .section-divider {{ display: flex; flex-direction: column; justify-content: center; flex: 1; position: relative; }}
+        .section-divider::before {{
+            content: ""; position: absolute;
+            width: clamp(10rem,35vw,22rem); height: clamp(10rem,35vw,22rem);
+            border: 2px solid {accent}; border-radius: 50%;
+            right: 2rem; top: 50%; transform: translateY(-50%); opacity: .12;
+        }}
+        .section-divider .sec-num {{ font-weight: 700; font-size: clamp(6rem,22vw,13rem); line-height: .85; color: {accent}; letter-spacing: -.05em; opacity: .55; }}
+        .section-divider .sec-label {{ color: var(--dim); font-size: .6em; letter-spacing: .22em; text-transform: uppercase; margin: .3rem 0; display: flex; align-items: center; gap: .6rem; }}
+        .section-divider .sec-label::before {{ content: ""; width: .6rem; height: .6rem; background: {accent}; border-radius: 50%; }}
+        .section-divider .sec-title {{ font-weight: 600; font-size: clamp(1.8rem,5vw,3.5rem); line-height: .95; color: var(--fg); margin: 0; letter-spacing: -.02em; }}
+        .statement-slide {{ display: flex; flex-direction: column; justify-content: center; flex: 1; }}
+        .statement-slide .stmt {{ font-weight: 700; font-size: clamp(2rem,6vw,4.5rem); line-height: 1.0; letter-spacing: -.03em; color: var(--fg); }}
+        .statement-slide .stmt em {{ color: {accent}; font-style: normal; }}
+    """,
+
+    # ── 10. KODACHROME ────────────────────────────────────────────────────────
+    # Screenshots: mountain/nature photography overlays + real-estate warm tones
+    # Warm vintage: cream/terracotta, italic DM Serif, photo-overlay slides, film-grain texture
+    "kodachrome": """
+        :root {{
+            --accent: {accent};
+            --fg: #1c1008; --fg2: #5c3d22; --bg: #faf5ee;
+            --surface: #f2ead8; --border: #d4b896; --dim: #9a7a58;
+        }}
+        .reveal-viewport {{ background: var(--bg); }}
+        .reveal {{ font-family: 'IBM Plex Sans', sans-serif; color: var(--fg); }}
+        .reveal .slides section {{
+            text-align: left; padding: 3.5rem 4.5rem;
+            display: flex; flex-direction: column; justify-content: flex-start;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+        }}
+        .reveal h1 {{
+            font-family: 'DM Serif Display', serif; font-weight: 400; font-style: italic;
+            font-size: clamp(3rem,8.5vw,6rem); line-height: .9;
+            letter-spacing: -.03em; color: var(--fg); margin: 0 0 .4em;
+        }}
+        .reveal h1 em {{ color: {accent}; }}
+        .reveal h2 {{
+            font-family: 'DM Serif Display', serif; font-weight: 400;
+            font-size: clamp(1.4rem,3.5vw,2.3rem); line-height: 1.08;
+            letter-spacing: -.02em; color: var(--fg); margin: 0 0 .85em;
+            border-bottom: 1px solid var(--border); padding-bottom: .35em;
+        }}
+        .reveal ul, .reveal ol {{ list-style: none; padding: 0; margin: 0; width: 100%; counter-reset: li; }}
+        .reveal li {{
+            counter-increment: li; padding: .65em 0;
+            border-top: 1px solid var(--border); font-size: .86em; line-height: 1.55; color: var(--fg);
+            display: grid; grid-template-columns: 2.8rem 1fr; gap: .9rem; align-items: baseline;
+        }}
+        .reveal li:last-child {{ border-bottom: 1px solid var(--border); }}
+        .reveal li::before {{
+            font-family: 'DM Serif Display', serif; font-style: italic;
+            content: counter(li); font-size: 1.8em; line-height: .85; color: {accent};
+        }}
+        .reveal pre {{ width: 100%; margin: .5em 0; border: 1px solid var(--border); border-radius: 2px; }}
+        .reveal pre code {{ font-size: .7em; background: var(--surface); padding: 1em; line-height: 1.6; color: var(--fg); }}
+        .reveal .progress {{ background: {accent}; height: 2px; }}
+        .reveal .controls {{ color: {accent}; }}
+        .reveal .slide-number {{ color: var(--dim); font-size: .5em; }}
+        .subtitle {{
+            font-family: 'DM Serif Display', serif; font-style: italic;
+            color: var(--fg2); font-size: .84em; margin-top: .4em; line-height: 1.4; max-width: 30ch;
+        }}
+        .hero-metric {{
+            font-family: 'DM Serif Display', serif; font-style: italic; font-weight: 400;
+            font-size: clamp(5rem,18vw,10rem); line-height: .82; color: {accent};
+            letter-spacing: -.04em; display: block;
+        }}
+        .metric-label {{
+            font-family: 'IBM Plex Mono', monospace; font-size: .6em; letter-spacing: .18em;
+            text-transform: uppercase; color: var(--dim); margin-bottom: .35em;
+        }}
+        .metric-desc {{
+            font-family: 'DM Serif Display', serif; font-style: italic;
+            font-size: .82em; color: var(--fg2); margin-top: .5em; line-height: 1.45;
+            border-left: 2px solid var(--border); padding-left: .9rem;
+        }}
+        .grid-card {{ background: var(--surface); border: 1px solid var(--border); padding: 1rem; border-radius: 2px; }}
+        .grid-card h4 {{ font-family: 'DM Serif Display', serif; font-size: .82rem; font-weight: 400; color: var(--fg); margin: 0 0 .3em; }}
+        .grid-card p {{ font-family: 'DM Serif Display', serif; font-style: italic; font-size: .76rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
+        .t-num {{ font-family: 'DM Serif Display', serif; font-style: italic; font-size: 2.2rem; color: {accent}; font-weight: 400; display: block; margin-bottom: .3em; }}
+        .section-divider {{ display: flex; flex-direction: column; justify-content: center; flex: 1; position: relative; overflow: hidden; }}
+        .section-divider .sec-num {{
+            position: absolute; right: -1rem; top: 50%; transform: translateY(-50%);
+            font-family: 'DM Serif Display', serif; font-style: italic; font-weight: 400;
+            font-size: clamp(8rem,28vw,18rem); line-height: .8; color: {accent}; opacity: .12; letter-spacing: -.05em;
+        }}
+        .section-divider .sec-label {{
+            font-family: 'IBM Plex Mono', monospace; font-size: .6em; letter-spacing: .22em;
+            text-transform: uppercase; color: var(--dim); margin-bottom: .5rem;
+        }}
+        .section-divider .sec-title {{
+            font-family: 'DM Serif Display', serif; font-weight: 400; font-style: italic;
+            font-size: clamp(2.5rem,8vw,5.5rem); line-height: .9; letter-spacing: -.03em; color: var(--fg); margin: 0;
+        }}
+        .section-divider .sec-title em {{ color: {accent}; font-style: italic; }}
+        .statement-slide {{ display: flex; flex-direction: column; justify-content: center; flex: 1; }}
+        .statement-slide .stmt {{
+            font-family: 'DM Serif Display', serif; font-weight: 400; font-style: italic;
+            font-size: clamp(2.5rem,7vw,5.5rem); line-height: 1.0; letter-spacing: -.025em; color: var(--fg);
+        }}
+        .statement-slide .stmt em {{ color: {accent}; }}
+    """,
+
     # ── LEGACY (kept for old saved projects) ─────────────────────────────────
     "dark-editorial": """
         :root {{
@@ -2137,6 +2500,16 @@ Theme options:
                         amber dimension lines, corner marks. Ideal: architecture, data pipelines, infra.
   swiss-brutalism     — warm white bg, Archivo Black, hard black rules, single electric accent circle.
                         Ideal: product pitches, company reviews, high-contrast bold statements.
+  harvest             — dark forest green bg, orange accent, bold Barlow Condensed, photography-ready.
+                        Ideal: product launches, sustainability, bold growth narrative.
+  neon-noir           — near-black bg, electric blue/cyan glow, glowing borders, futuristic SaaS.
+                        Ideal: AI products, cloud infra, developer platforms, investor demos.
+  broadsheet          — off-white bg, Archivo Black, bold accent sidebar strip, huge numbers.
+                        Ideal: business reviews, market analysis, investor updates, bold data stories.
+  obsidian            — dark charcoal bg, lime green accent, circular motifs, dashboard feel.
+                        Ideal: analytics, OKR reviews, product metrics, activation dashboards.
+  kodachrome          — warm cream bg, terracotta accent, italic DM Serif, film-grain texture.
+                        Ideal: case studies, team presentations, creative projects, storytelling.
 
 Accent color options (pick ONE that fits the project energy):
   #00ff9c  terminal green — hacker, systems, infrastructure
@@ -2154,6 +2527,11 @@ Font heading options (pick based on theme):
   gradient-dreamscape → Instrument Serif
   blueprint           → Barlow Condensed
   swiss-brutalism     → Archivo Black
+  harvest             → Barlow Condensed
+  neon-noir           → Space Grotesk
+  broadsheet          → Archivo Black
+  obsidian            → Space Grotesk
+  kodachrome          → DM Serif Display
 
 Font body options:
   terminal-brutalist  → JetBrains Mono
@@ -2161,10 +2539,15 @@ Font body options:
   gradient-dreamscape → Space Grotesk
   blueprint           → IBM Plex Mono
   swiss-brutalism     → Space Grotesk
+  harvest             → IBM Plex Sans
+  neon-noir           → Space Grotesk
+  broadsheet          → IBM Plex Sans
+  obsidian            → Space Grotesk
+  kodachrome          → IBM Plex Sans
 
 Output schema:
 {
-  "theme": "terminal-brutalist | editorial-press | gradient-dreamscape | blueprint | swiss-brutalism",
+  "theme": "terminal-brutalist | editorial-press | gradient-dreamscape | blueprint | swiss-brutalism | harvest | neon-noir | broadsheet | obsidian | kodachrome",
   "accent_color": "#XXXXXX",
   "accent_color_name": "name",
   "font_heading": "one of the heading options above",

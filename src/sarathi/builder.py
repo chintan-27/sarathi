@@ -123,7 +123,7 @@ OUTPUT SCHEMA
   "slides": [
     {
       "id": 1,
-      "type": "title | context | metric_callout | chart | image | code | comparison | takeaways | next_steps",
+      "type": "title | context | metric_callout | chart | image | code | comparison | takeaways | next_steps | feature_grid | timeline | table | section_divider | statement",
       "heading": "A conclusion drawn from real evidence — not a label like 'Results'",
       "artifacts": ["exact/path/from/artifact/list"],
       "insight": "2-3 sentences grounded in real content. WHAT does this slide show from the actual files? WHY does it matter for this project specifically?",
@@ -178,15 +178,18 @@ EVERY non-title slide must have ONE dominant visual: a large number, chart, imag
 ═══════════════
 SLIDE TYPES
 ═══════════════
-metric_callout → ONE large number from the files. Heading = what it means.
-chart/image    → Heading = conclusion from the visual (not "Chart of X").
-code           → MAX 2 per deck. 5-8 most important lines only. Never a whole file.
-comparison     → Before vs. after — only if both states appear in the files.
-table          → CSV data, max 8 rows, real column names and values.
-feature_grid   → 3-6 items as grid cards. Each bullet becomes one card (format: "Title: description").
-timeline       → Sequential steps/stages. Each bullet = one step.
-takeaways      → MAX 3 bullets. Each is a complete sentence with a specific detail.
+metric_callout   → ONE large number from the files. Heading = what it means.
+chart/image      → Heading = conclusion from the visual (not "Chart of X").
+code             → MAX 2 per deck. 5-8 most important lines only. Never a whole file.
+comparison       → Before vs. after — only if both states appear in the files.
+table            → CSV data, max 8 rows, real column names and values.
+feature_grid     → 3-6 items as grid cards. Each bullet becomes one card (format: "Title: description").
+timeline         → Sequential steps/stages. Each bullet = one step.
+takeaways        → MAX 3 bullets. Each is a complete sentence with a specific detail.
 context/next_steps → MAX 3 bullets. Default for flowing narrative content.
+section_divider  → Visual break between narrative sections. Heading = section title (e.g. "Architecture").
+                   Use once per major narrative section, not for every slide.
+statement        → One powerful single-sentence claim. No bullets. Used for "so what" moments.
 
 ══════════════════════════════
 SLIDE VARIETY RULES — MANDATORY
@@ -381,6 +384,26 @@ EXAMPLE (metric_callout — for reference):
   <aside class="notes">Loss plateaued at epoch 28 per training_log.txt. The jump from 82% came after adding dropout layers in commit a3f2c1.</aside>
 </section>
 
+section_divider:
+<section data-auto-animate>
+  <div class="section-divider">
+    <span class="sec-num">{slide id zero-padded}</span>
+    <p class="sec-label">Section {N}</p>
+    <h2 class="sec-title">{EXACT HEADING}</h2>
+    <p class="subtitle">{one sentence from insight}</p>
+  </div>
+  <aside class="notes">{what this section covers}</aside>
+</section>
+
+statement:
+<section data-auto-animate>
+  <div class="statement-slide">
+    <p class="stmt">{EXACT HEADING — the big claim}</p>
+    <p class="subtitle">{one supporting sentence from insight}</p>
+  </div>
+  <aside class="notes">{evidence and context for this claim}</aside>
+</section>
+
 EXAMPLE (split layout — code + explanation):
 <section data-auto-animate>
   <h2>Two-Pass Pipeline Eliminates Context Overflow</h2>
@@ -461,8 +484,521 @@ def _coder_user(slide: dict, artifacts_map: dict[str, ResultFile]) -> str:
 
 # ── HTML assembly ─────────────────────────────────────────────────────────────
 
+# Comprehensive font URL — covers all themes
+_ALL_FONTS_URL = (
+    "https://fonts.googleapis.com/css2?"
+    "family=JetBrains+Mono:wght@400;500;700;800"
+    "&family=DM+Serif+Display:ital@0;1"
+    "&family=IBM+Plex+Sans:wght@300;400;500;700"
+    "&family=IBM+Plex+Sans+Condensed:wght@400;600;700"
+    "&family=Instrument+Serif:ital@0;1"
+    "&family=Space+Grotesk:wght@300;400;500;600;700"
+    "&family=Barlow+Condensed:wght@300;500;700;900"
+    "&family=IBM+Plex+Mono:wght@300;400;500;600"
+    "&family=Archivo+Black"
+    "&family=Space+Mono:wght@400;700"
+    "&display=swap"
+)
+
+# Shared utility classes appended to every theme
+_SHARED_CLASSES = """
+    .reveal pre, .reveal code {{ font-family: 'JetBrains Mono', monospace; }}
+    .reveal .r-fit-text {{ line-height: 1; }}
+    .slide-split {{ display: grid; grid-template-columns: 1fr 1fr; gap: 2.5rem; align-items: start; margin-top: 1rem; }}
+    .slide-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .9rem; flex: 1; margin-top: .6rem; }}
+    .timeline-row {{ display: flex; gap: 0; margin-top: 1rem; flex: 1; }}
+    .t-step {{ flex: 1; padding: 1rem; border-top: 3px solid var(--border); }}
+    .t-step.fragment.visible {{ border-top-color: var(--accent); }}
+    .t-step p {{ font-size: .76rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
+"""
+
 # Theme skeletons — {accent}, {font_heading}, {font_body} filled by Designer Agent
 _THEME_SKELETONS: dict[str, str] = {
+
+    # ── 1. TERMINAL BRUTALIST ─────────────────────────────────────────────────
+    # JetBrains Mono everywhere, terminal-green accent, scanlines, build-log chrome
+    "terminal-brutalist": """
+        :root {{
+            --accent: {accent};
+            --fg: #e6e6e0; --fg2: #6e7268; --bg: #0a0b0a;
+            --surface: #131413; --border: #1f221e; --dim: #4a4d48;
+        }}
+        .reveal-viewport {{ background: var(--bg); }}
+        .reveal {{ font-family: 'JetBrains Mono', monospace; color: var(--fg); }}
+        .reveal .slides section {{
+            text-align: left; padding: 3.5rem 4.5rem 3rem;
+            display: flex; flex-direction: column; justify-content: flex-start;
+            background-image: repeating-linear-gradient(
+                0deg, rgba(255,255,255,0.016) 0, rgba(255,255,255,0.016) 1px,
+                transparent 1px, transparent 4px);
+        }}
+        .reveal h1 {{
+            font-family: 'JetBrains Mono', monospace; font-weight: 800;
+            font-size: clamp(2.8rem,7vw,5rem); line-height: .9;
+            letter-spacing: -.04em; color: var(--fg); margin: 0 0 .5em;
+        }}
+        .reveal h1::before {{ content: "$ "; color: {accent}; }}
+        .reveal h2 {{
+            font-family: 'JetBrains Mono', monospace; font-weight: 700;
+            font-size: clamp(1.3rem,3vw,1.9rem); line-height: 1.1;
+            letter-spacing: -.02em; color: var(--fg); margin: 0 0 .8em;
+        }}
+        .reveal h2::before {{ content: "## "; color: {accent}; }}
+        .reveal ul, .reveal ol {{ list-style: none; padding: 0; margin: 0; width: 100%; counter-reset: li; }}
+        .reveal li {{
+            counter-increment: li; display: grid;
+            grid-template-columns: 3.2rem 1fr; gap: 1rem;
+            padding: .5em 0; border-top: 1px dashed var(--border);
+            font-size: .86em; line-height: 1.55; color: var(--fg); align-items: baseline;
+        }}
+        .reveal li:last-child {{ border-bottom: 1px dashed var(--border); }}
+        .reveal li::before {{ content: "[" counter(li, decimal-leading-zero) "]"; color: {accent}; font-size: .8em; }}
+        .reveal pre {{ width: 100%; margin: .5em 0; border: 1px solid var(--border); border-radius: 3px; }}
+        .reveal pre code {{ font-size: .7em; background: var(--surface); padding: 1em; line-height: 1.6; }}
+        .reveal .progress {{ background: {accent}; height: 2px; }}
+        .reveal .controls {{ color: {accent}; }}
+        .reveal .slide-number {{ color: var(--dim); font-size: .5em; }}
+        .subtitle {{ color: var(--fg2); font-size: .78em; margin-top: .35em; }}
+        .hero-metric {{
+            font-family: 'JetBrains Mono', monospace; font-weight: 800;
+            font-size: clamp(4.5rem,16vw,9rem); line-height: .88; color: {accent};
+            letter-spacing: -.05em; display: block;
+            text-shadow: 0 0 60px rgba(0,255,156,0.22);
+        }}
+        .metric-label {{ font-size: .6em; letter-spacing: .18em; text-transform: uppercase; color: var(--dim); margin-bottom: .3em; }}
+        .metric-desc {{ font-size: .74em; color: var(--fg2); margin-top: .4em; }}
+        .grid-card {{ background: var(--surface); border: 1px solid var(--border); padding: .9rem; }}
+        .grid-card h4 {{ font-size: .74rem; font-weight: 700; color: {accent}; margin: 0 0 .3em; letter-spacing: .04em; }}
+        .grid-card p {{ font-size: .71rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
+        .t-num {{ font-family: 'JetBrains Mono', monospace; font-size: 1.9rem; color: {accent}; font-weight: 800; display: block; margin-bottom: .3em; }}
+        .section-divider {{ display: flex; flex-direction: column; justify-content: center; flex: 1; }}
+        .section-divider .sec-num {{
+            font-size: clamp(6rem,22vw,14rem); font-weight: 800; color: {accent};
+            line-height: .85; letter-spacing: -.06em;
+            text-shadow: 0 0 80px rgba(0,255,156,0.2);
+        }}
+        .section-divider .sec-label {{ color: var(--dim); font-size: .6em; letter-spacing: .22em; text-transform: uppercase; margin: .5rem 0 .2rem; }}
+        .section-divider .sec-title {{ font-size: clamp(1.6rem,4vw,3rem); font-weight: 700; letter-spacing: -.02em; color: var(--fg); margin: 0; }}
+        .section-divider .sec-title::before {{ content: "## "; color: {accent}; }}
+        .statement-slide {{ display: flex; flex-direction: column; justify-content: center; flex: 1; }}
+        .statement-slide .stmt {{ font-size: clamp(2rem,5.5vw,4rem); font-weight: 800; line-height: 1.0; letter-spacing: -.03em; color: var(--fg); }}
+        .statement-slide .stmt em {{ color: {accent}; font-style: normal; }}
+    """,
+
+    # ── 2. EDITORIAL PRESS ────────────────────────────────────────────────────
+    # Cream stock, DM Serif Display, scarlet accent, masthead chrome, magazine spreads
+    "editorial-press": """
+        :root {{
+            --accent: {accent};
+            --fg: #1a1614; --fg2: #4b3e35; --bg: #f4ede2;
+            --surface: #ede5d5; --border: #1a1614; --dim: #6b5e57;
+        }}
+        .reveal-viewport {{ background: var(--bg); }}
+        .reveal {{ font-family: 'IBM Plex Sans', sans-serif; color: var(--fg); }}
+        .reveal .slides section {{
+            text-align: left; padding: 4.5rem 4.5rem 3.5rem;
+            display: flex; flex-direction: column; justify-content: flex-start;
+            border-top: 1px solid var(--border);
+        }}
+        .reveal h1 {{
+            font-family: 'DM Serif Display', serif; font-weight: 400;
+            font-size: clamp(3rem,9vw,6.5rem); line-height: .88;
+            letter-spacing: -.04em; color: var(--fg); margin: 0 0 .35em;
+        }}
+        .reveal h1 em {{ color: {accent}; font-style: italic; }}
+        .reveal h2 {{
+            font-family: 'DM Serif Display', serif; font-weight: 400;
+            font-size: clamp(1.4rem,3.5vw,2.2rem); line-height: 1.1;
+            letter-spacing: -.02em; color: var(--fg); margin: 0 0 .9em;
+            padding-bottom: .3em; border-bottom: 1px solid var(--border);
+        }}
+        .reveal ul, .reveal ol {{ list-style: none; padding: 0; margin: 0; width: 100%;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem 2.5rem; align-content: start;
+            counter-reset: li; }}
+        .reveal li {{
+            display: grid; grid-template-columns: 3.2rem 1fr; gap: .8rem;
+            padding-top: .9rem; border-top: 1px solid var(--border); align-items: start;
+            counter-increment: li;
+        }}
+        .reveal li::before {{
+            font-family: 'DM Serif Display', serif; font-size: 2.6rem; line-height: .85;
+            color: {accent}; content: counter(li, decimal-leading-zero); flex-shrink: 0;
+        }}
+        .reveal li .li-num {{ display: none; }}
+        .reveal li .li-body, .reveal li > span:not(.li-num) {{ font-size: .82em; line-height: 1.5; }}
+        .reveal li b {{ font-weight: 600; }}
+        .reveal pre {{ width: 100%; margin: .5em 0; border: 1px solid var(--border); border-radius: 0; }}
+        .reveal pre code {{ font-size: .7em; background: var(--surface); padding: 1em; line-height: 1.6; }}
+        .reveal .progress {{ background: {accent}; height: 2px; }}
+        .reveal .controls {{ color: {accent}; }}
+        .reveal .slide-number {{ color: var(--dim); font-size: .5em; }}
+        .subtitle {{ font-family: 'DM Serif Display', serif; font-style: italic; color: var(--fg2); font-size: .85em; margin-top: .4em; line-height: 1.35; }}
+        .hero-metric {{
+            font-family: 'DM Serif Display', serif; font-weight: 400;
+            font-size: clamp(5rem,18vw,10rem); line-height: .82; color: var(--fg);
+            letter-spacing: -.05em; display: block;
+        }}
+        .hero-metric .u {{ color: {accent}; font-style: italic; font-size: .55em; }}
+        .metric-label {{
+            font-family: 'IBM Plex Sans Condensed', sans-serif; font-weight: 600;
+            font-size: .62em; letter-spacing: .22em; text-transform: uppercase;
+            color: {accent}; margin-bottom: .4em;
+        }}
+        .metric-desc {{
+            font-family: 'DM Serif Display', serif; font-style: italic;
+            font-size: .85em; color: var(--fg2); margin-top: .5em; line-height: 1.4;
+            border-left: 1px solid var(--border); padding-left: 1rem;
+        }}
+        .grid-card {{
+            background: var(--surface); border: 1px solid var(--border); padding: 1rem;
+            display: grid; grid-template-rows: auto 1fr;
+        }}
+        .grid-card h4 {{
+            font-family: 'IBM Plex Sans', sans-serif; font-size: .78rem; font-weight: 600;
+            color: var(--fg); margin: 0 0 .3em;
+        }}
+        .grid-card p {{ font-family: 'DM Serif Display', serif; font-style: italic; font-size: .76rem; color: var(--fg2); margin: 0; line-height: 1.45; }}
+        .t-num {{ font-family: 'DM Serif Display', serif; font-size: 2.2rem; color: {accent}; font-weight: 400; display: block; margin-bottom: .25em; }}
+        .section-divider {{ display: flex; flex-direction: column; justify-content: center; flex: 1; position: relative; overflow: hidden; }}
+        .section-divider .sec-num {{
+            position: absolute; right: -2rem; top: 50%; transform: translateY(-50%);
+            font-family: 'DM Serif Display', serif; font-style: italic;
+            font-size: clamp(8rem,28vw,18rem); line-height: .8; color: {accent};
+            opacity: 0.18; letter-spacing: -.05em; pointer-events: none;
+        }}
+        .section-divider .sec-label {{
+            font-family: 'IBM Plex Sans Condensed', sans-serif; font-weight: 600;
+            font-size: .62em; letter-spacing: .24em; text-transform: uppercase; color: {accent}; margin-bottom: .5rem;
+        }}
+        .section-divider .sec-title {{
+            font-family: 'DM Serif Display', serif; font-weight: 400;
+            font-size: clamp(2.5rem,8vw,5.5rem); line-height: .9; margin: 0; letter-spacing: -.03em; color: var(--fg);
+        }}
+        .section-divider .sec-title em {{ font-style: italic; color: {accent}; }}
+        .statement-slide {{ display: flex; flex-direction: column; justify-content: center; flex: 1; }}
+        .statement-slide .stmt {{
+            font-family: 'DM Serif Display', serif; font-size: clamp(2.2rem,6vw,4.2rem);
+            font-weight: 400; line-height: 1.05; letter-spacing: -.025em; color: var(--fg);
+        }}
+        .statement-slide .stmt em {{ color: {accent}; font-style: italic; }}
+    """,
+
+    # ── 3. GRADIENT DREAMSCAPE ────────────────────────────────────────────────
+    # Deep purple mesh, Instrument Serif italic, glass cards, gradient text fills
+    "gradient-dreamscape": """
+        :root {{
+            --accent: {accent};
+            --fg: #f4ecff; --fg2: rgba(244,236,255,.68); --bg: #110a26;
+            --surface: rgba(255,255,255,0.06); --border: rgba(255,255,255,0.12); --dim: rgba(244,236,255,.4);
+        }}
+        .reveal-viewport {{
+            background:
+                radial-gradient(circle at 22% 28%, rgba(217,70,239,0.55) 0%, transparent 38%),
+                radial-gradient(circle at 80% 15%, rgba(245,158,11,0.35) 0%, transparent 26%),
+                radial-gradient(circle at 90% 80%, rgba(6,182,212,0.45) 0%, transparent 38%),
+                radial-gradient(circle at 8% 88%, rgba(99,102,241,0.5) 0%, transparent 42%),
+                #110a26;
+        }}
+        .reveal {{ font-family: 'Space Grotesk', sans-serif; color: var(--fg); }}
+        .reveal .slides section {{
+            text-align: left; padding: 3.5rem 4.5rem;
+            display: flex; flex-direction: column; justify-content: flex-start;
+            background-image: repeating-linear-gradient(
+                0deg, rgba(255,255,255,0.022) 0, rgba(255,255,255,0.022) 1px,
+                transparent 1px, transparent 3px),
+                radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.4) 100%);
+        }}
+        .reveal h1 {{
+            font-family: 'Instrument Serif', serif; font-style: italic; font-weight: 400;
+            font-size: clamp(3rem,9vw,6rem); line-height: .88; margin: 0 0 .4em;
+            letter-spacing: -.03em;
+            background: linear-gradient(135deg, #fef3c7 0%, #fbcfe8 35%, #c4b5fd 70%, #7dd3fc 100%);
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+        }}
+        .reveal h2 {{
+            font-family: 'Instrument Serif', serif; font-style: italic; font-weight: 400;
+            font-size: clamp(1.4rem,3.5vw,2.2rem); line-height: 1.05; margin: 0 0 .8em;
+            background: linear-gradient(120deg, #fef3c7, #fbcfe8 50%, #c4b5fd);
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+        }}
+        .reveal ul, .reveal ol {{ list-style: none; padding: 0; margin: 0; width: 100%;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; align-content: start; }}
+        .reveal li {{
+            background: var(--surface); backdrop-filter: blur(24px);
+            border: 1px solid var(--border); border-radius: 1.2rem;
+            padding: 1.1rem 1.3rem; font-size: .84em; line-height: 1.5; color: var(--fg);
+        }}
+        .reveal li::before {{ display: none; }}
+        .reveal pre {{ width: 100%; margin: .5em 0; border: 1px solid var(--border); border-radius: .5rem; }}
+        .reveal pre code {{ font-size: .7em; background: rgba(0,0,0,0.4); padding: 1em; line-height: 1.6; }}
+        .reveal .progress {{ background: {accent}; height: 3px; }}
+        .reveal .controls {{ color: {accent}; }}
+        .reveal .slide-number {{ color: var(--dim); font-size: .5em; }}
+        .subtitle {{
+            font-family: 'Instrument Serif', serif; font-style: italic;
+            color: var(--fg2); font-size: .82em; margin-top: .4em; line-height: 1.35; max-width: 30ch;
+        }}
+        .hero-metric {{
+            font-family: 'Instrument Serif', serif; font-style: italic; font-weight: 400;
+            font-size: clamp(5rem,18vw,10rem); line-height: .8; letter-spacing: -.05em; display: block;
+            background: linear-gradient(135deg, #fef3c7 0%, #fbcfe8 30%, #c4b5fd 60%, #7dd3fc 100%);
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+        }}
+        .metric-label {{ font-family: 'Space Grotesk', sans-serif; font-weight: 500; font-size: .62em; letter-spacing: .32em; text-transform: uppercase; color: #fbcfe8; margin-bottom: .4em; }}
+        .metric-desc {{
+            background: var(--surface); backdrop-filter: blur(24px);
+            border: 1px solid var(--border); border-radius: 1.2rem;
+            padding: .9rem 1.2rem; font-size: .78em; color: var(--fg2); margin-top: .6em; line-height: 1.55;
+        }}
+        .grid-card {{
+            background: var(--surface); backdrop-filter: blur(24px);
+            border: 1px solid var(--border); border-radius: 1.4rem; padding: 1.1rem 1.3rem;
+        }}
+        .grid-card h4 {{ font-family: 'Instrument Serif', serif; font-style: italic; font-size: .84rem; font-weight: 400; color: #fff; margin: 0 0 .3em; }}
+        .grid-card p {{ font-size: .73rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
+        .t-step {{ background: var(--surface); backdrop-filter: blur(20px); border: 1px solid var(--border); border-radius: .8rem; padding: 1rem; border-top: 1px solid var(--border); }}
+        .t-step.fragment.visible {{ border-color: {accent}; }}
+        .t-num {{ font-family: 'Instrument Serif', serif; font-style: italic; font-size: 2.2rem; color: {accent}; font-weight: 400; display: block; margin-bottom: .3em; }}
+        .section-divider {{ display: flex; flex-direction: column; justify-content: center; flex: 1; }}
+        .section-divider .sec-num {{
+            font-family: 'Instrument Serif', serif; font-style: italic;
+            font-size: clamp(6rem,22vw,14rem); font-weight: 400; line-height: .85; letter-spacing: -.04em;
+            background: linear-gradient(120deg, #fef3c7, #fbcfe8 40%, #c4b5fd);
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+            opacity: 0.55;
+        }}
+        .section-divider .sec-label {{ color: #fbcfe8; font-size: .6em; letter-spacing: .35em; text-transform: uppercase; margin: .3rem 0; }}
+        .section-divider .sec-title {{
+            font-family: 'Instrument Serif', serif; font-style: italic; font-weight: 400;
+            font-size: clamp(2rem,6vw,4.5rem); line-height: .9; margin: 0; letter-spacing: -.025em;
+            background: linear-gradient(120deg, #fef3c7, #fbcfe8 50%, #c4b5fd);
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+        }}
+        .statement-slide {{ display: flex; flex-direction: column; justify-content: center; flex: 1; }}
+        .statement-slide .stmt {{
+            font-family: 'Instrument Serif', serif; font-style: italic; font-weight: 400;
+            font-size: clamp(2.2rem,6vw,4.5rem); line-height: 1.08; letter-spacing: -.02em;
+            background: linear-gradient(135deg, #fef3c7 0%, #fbcfe8 35%, #c4b5fd 70%, #7dd3fc 100%);
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+        }}
+        .statement-slide .stmt em {{ font-style: normal; }}
+    """,
+
+    # ── 4. BLUEPRINT ──────────────────────────────────────────────────────────
+    # Navy + cyan engineering grid, Barlow Condensed 900, amber dimension lines
+    "blueprint": """
+        :root {{
+            --accent: {accent};
+            --fg: #e8f1fa; --fg2: #b9d2e3; --bg: #0c1e2f;
+            --surface: rgba(80,156,207,0.06); --border: rgba(110,168,201,0.4); --dim: #6ea8c9;
+        }}
+        .reveal-viewport {{ background: var(--bg); }}
+        .reveal {{ font-family: 'IBM Plex Mono', monospace; color: var(--fg); }}
+        .reveal .slides section {{
+            text-align: left; padding: 3.5rem 4.5rem 4rem;
+            display: flex; flex-direction: column; justify-content: flex-start;
+            background-image:
+                linear-gradient(rgba(80,156,207,0.07) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(80,156,207,0.07) 1px, transparent 1px),
+                linear-gradient(rgba(80,156,207,0.16) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(80,156,207,0.16) 1px, transparent 1px);
+            background-size: 2.5rem 2.5rem, 2.5rem 2.5rem, 12.5rem 12.5rem, 12.5rem 12.5rem;
+        }}
+        /* Corner registration marks */
+        .reveal .slides section::before,
+        .reveal .slides section::after {{
+            content: ""; position: absolute; width: 2.5rem; height: 2.5rem;
+            border: 2px solid {accent}; pointer-events: none;
+        }}
+        .reveal .slides section::before {{ top: 1.2rem; left: 1.2rem; border-right: none; border-bottom: none; }}
+        .reveal .slides section::after  {{ bottom: 1.2rem; right: 1.2rem; border-left: none; border-top: none; }}
+        .reveal h1 {{
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 900;
+            font-size: clamp(3rem,9vw,6rem); line-height: .88; text-transform: uppercase;
+            letter-spacing: .01em; color: #fcfeff; margin: 0 0 .4em;
+        }}
+        .reveal h1::before {{
+            content: "FILE — "; color: {accent};
+            font-size: .4em; letter-spacing: .22em; display: block; margin-bottom: .5rem;
+        }}
+        .reveal h2 {{
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 900;
+            font-size: clamp(1.5rem,3.5vw,2.2rem); line-height: 1.0; text-transform: uppercase;
+            letter-spacing: .008em; color: #fcfeff; margin: 0 0 .8em;
+        }}
+        .reveal ul, .reveal ol {{ list-style: none; padding: 0; margin: 0; width: 100%; display: flex; flex-direction: column; gap: .55rem; }}
+        .reveal li {{
+            display: grid; grid-template-columns: 5rem 1fr auto; gap: 1.2rem;
+            border: 1px solid var(--border); padding: .7rem .9rem;
+            background: var(--surface); align-items: center;
+            font-size: .82em; line-height: 1.4; color: var(--fg);
+            counter-increment: li;
+        }}
+        .reveal li::before {{
+            content: "DEL-" counter(li, decimal-leading-zero);
+            color: {accent}; font-size: .75em; letter-spacing: .04em;
+            border-right: 1px solid rgba(255,184,77,0.4); padding-right: .8rem;
+        }}
+        .reveal pre {{ width: 100%; margin: .5em 0; border: 1px solid var(--border); border-radius: 0; }}
+        .reveal pre code {{ font-size: .7em; background: rgba(0,0,0,0.35); padding: 1em; line-height: 1.6; }}
+        .reveal .progress {{ background: {accent}; height: 2px; }}
+        .reveal .controls {{ color: {accent}; }}
+        .reveal .slide-number {{ color: var(--dim); font-size: .5em; letter-spacing: .12em; }}
+        .subtitle {{
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 500;
+            font-size: .82em; color: var(--fg2); text-transform: uppercase;
+            letter-spacing: .02em; line-height: 1.25; margin-top: .4em;
+        }}
+        .hero-metric {{
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 900;
+            font-size: clamp(5rem,18vw,11rem); line-height: .86; color: #fcfeff;
+            letter-spacing: -.01em; display: block; text-transform: uppercase;
+        }}
+        .hero-metric .u {{ color: {accent}; font-size: .55em; }}
+        .metric-label {{
+            color: {accent}; font-size: .6em; letter-spacing: .32em; text-transform: uppercase;
+            display: flex; align-items: center; gap: .8rem; margin-bottom: .4em;
+        }}
+        .metric-label::before {{ content: ""; display: inline-block; width: 2rem; height: 1px; background: {accent}; }}
+        .metric-desc {{
+            border: 1px solid var(--border); padding: .75rem 1rem;
+            font-size: .74em; color: var(--fg2); margin-top: .5em; line-height: 1.7;
+            letter-spacing: .04em;
+        }}
+        .grid-card {{ background: var(--surface); border: 1px solid var(--border); padding: .9rem; }}
+        .grid-card h4 {{
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 700;
+            font-size: .78rem; text-transform: uppercase; letter-spacing: .04em;
+            color: {accent}; margin: 0 0 .3em;
+        }}
+        .grid-card p {{ font-size: .72rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
+        .t-num {{
+            font-family: 'Barlow Condensed', sans-serif; font-size: 2rem;
+            color: {accent}; font-weight: 900; display: block; margin-bottom: .3em; text-transform: uppercase;
+        }}
+        .section-divider {{ display: flex; flex-direction: column; justify-content: center; flex: 1; }}
+        .section-divider .sec-num {{
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 900;
+            font-size: clamp(7rem,24vw,16rem); line-height: .82; color: #fcfeff;
+            letter-spacing: -.02em; text-transform: uppercase;
+        }}
+        .section-divider .sec-label {{
+            color: {accent}; font-size: .6em; letter-spacing: .4em; text-transform: uppercase;
+            display: flex; align-items: center; gap: 1rem; margin-bottom: .5rem;
+        }}
+        .section-divider .sec-label::before, .section-divider .sec-label::after {{
+            content: ""; height: 1px; background: {accent};
+        }}
+        .section-divider .sec-label::before {{ width: 3rem; }}
+        .section-divider .sec-label::after {{ flex: 1; max-width: 8rem; }}
+        .section-divider .sec-title {{
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 900;
+            font-size: clamp(2rem,6vw,4rem); line-height: .9; text-transform: uppercase; letter-spacing: .01em; color: #fcfeff; margin: 0;
+        }}
+        .statement-slide {{ display: flex; flex-direction: column; justify-content: center; flex: 1; }}
+        .statement-slide .stmt {{
+            font-family: 'Barlow Condensed', sans-serif; font-weight: 900;
+            font-size: clamp(2.2rem,6.5vw,5rem); line-height: .9; text-transform: uppercase;
+            letter-spacing: .01em; color: #fcfeff;
+        }}
+        .statement-slide .stmt em {{ color: {accent}; font-style: normal; }}
+    """,
+
+    # ── 5. SWISS BRUTALISM ────────────────────────────────────────────────────
+    # Warm white, Archivo Black, single electric accent circle, hard rules
+    "swiss-brutalism": """
+        :root {{
+            --accent: {accent};
+            --fg: #0a0a0a; --fg2: #44423e; --bg: #f5f4ef;
+            --surface: #ebebе5; --border: #0a0a0a; --dim: #767470;
+        }}
+        .reveal-viewport {{ background: var(--bg); }}
+        .reveal {{ font-family: 'Space Grotesk', sans-serif; color: var(--fg); }}
+        .reveal .slides section {{
+            text-align: left; padding: 4rem 5rem 3.5rem;
+            display: flex; flex-direction: column; justify-content: flex-start;
+            border-top: 3px solid var(--fg);
+        }}
+        .reveal h1 {{
+            font-family: 'Archivo Black', sans-serif; font-weight: 900;
+            font-size: clamp(3rem,9vw,6.5rem); line-height: .84;
+            letter-spacing: -.045em; text-transform: uppercase; color: var(--fg); margin: 0 0 .4em;
+        }}
+        .reveal h2 {{
+            font-family: 'Archivo Black', sans-serif; font-weight: 900;
+            font-size: clamp(1.5rem,3.5vw,2.3rem); line-height: .92;
+            letter-spacing: -.035em; text-transform: uppercase; color: var(--fg); margin: 0 0 .8em;
+        }}
+        .reveal ul, .reveal ol {{ list-style: none; padding: 0; margin: 0; width: 100%;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem 2.5rem; align-content: start;
+            counter-reset: li; }}
+        .reveal li {{
+            display: grid; grid-template-columns: 4rem 1fr; gap: 1rem;
+            border-top: 3px solid var(--fg); padding-top: .9rem; align-items: start;
+            counter-increment: li;
+        }}
+        .reveal li::before {{
+            font-family: 'Archivo Black', sans-serif; font-size: 2.4rem;
+            line-height: .88; letter-spacing: -.03em;
+            content: counter(li, decimal-leading-zero);
+            color: {accent};
+        }}
+        .reveal li:nth-child(even)::before {{ color: var(--fg); }}
+        .reveal li > *:not(::before) {{ font-size: .82em; line-height: 1.45; }}
+        .reveal li b {{ font-weight: 700; }}
+        .reveal pre {{ width: 100%; margin: .5em 0; border: 3px solid var(--fg); border-radius: 0; }}
+        .reveal pre code {{ font-size: .7em; background: #ebebе5; padding: 1em; line-height: 1.6; color: var(--fg); }}
+        .reveal .progress {{ background: {accent}; height: 3px; }}
+        .reveal .controls {{ color: {accent}; }}
+        .reveal .slide-number {{ color: var(--dim); font-size: .5em; font-family: 'Space Mono', monospace; letter-spacing: .06em; }}
+        .subtitle {{ font-family: 'Space Grotesk', sans-serif; font-weight: 500; color: var(--fg2); font-size: .8em; margin-top: .4em; line-height: 1.3; max-width: 32ch; }}
+        .hero-metric {{
+            font-family: 'Archivo Black', sans-serif; font-weight: 900;
+            font-size: clamp(5rem,18vw,11rem); line-height: .82; letter-spacing: -.055em;
+            display: block; text-transform: uppercase; position: relative;
+        }}
+        /* Accent circle behind metric number — CSS-only dot trick */
+        .hero-metric::before {{
+            content: ""; position: absolute;
+            width: clamp(5rem,16vw,9rem); height: clamp(5rem,16vw,9rem);
+            background: {accent}; border-radius: 50%;
+            left: .3em; top: .1em; z-index: -1;
+        }}
+        .metric-label {{ font-family: 'Space Mono', monospace; font-size: .6em; letter-spacing: .18em; text-transform: uppercase; color: var(--dim); margin-bottom: .4em; }}
+        .metric-desc {{ border-left: 3px solid var(--fg); padding-left: .9rem; font-size: .78em; color: var(--fg2); margin-top: .5em; line-height: 1.45; }}
+        .grid-card {{ border-top: 3px solid var(--fg); padding-top: .9rem; }}
+        .grid-card h4 {{ font-family: 'Archivo Black', sans-serif; font-size: .78rem; font-weight: 900; text-transform: uppercase; letter-spacing: -.01em; color: {accent}; margin: 0 0 .3em; }}
+        .grid-card p {{ font-family: 'Space Mono', monospace; font-size: .7rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
+        .t-step {{ border-top: 3px solid var(--fg); padding-top: .9rem; }}
+        .t-step.fragment.visible {{ border-top-color: {accent}; }}
+        .t-num {{ font-family: 'Archivo Black', sans-serif; font-size: 2.2rem; color: {accent}; font-weight: 900; display: block; margin-bottom: .3em; letter-spacing: -.03em; }}
+        .section-divider {{ display: flex; flex-direction: column; justify-content: center; flex: 1; border-top: 3px solid var(--fg); padding-top: 1.5rem; }}
+        .section-divider .sec-num {{
+            font-family: 'Archivo Black', sans-serif; font-weight: 900;
+            font-size: clamp(7rem,22vw,14rem); line-height: .8; color: {accent};
+            letter-spacing: -.05em; text-transform: uppercase; align-self: flex-end;
+        }}
+        .section-divider .sec-label {{
+            font-family: 'Space Mono', monospace; font-size: .6em; letter-spacing: .2em;
+            text-transform: uppercase; color: var(--dim); margin-bottom: .4rem;
+            display: flex; align-items: center; gap: 1rem;
+        }}
+        .section-divider .sec-label::before {{ content: ""; width: 1.2rem; height: 1.2rem; background: {accent}; border-radius: 50%; flex-shrink: 0; }}
+        .section-divider .sec-title {{
+            font-family: 'Archivo Black', sans-serif; font-weight: 900;
+            font-size: clamp(2.2rem,6vw,5rem); line-height: .88; text-transform: uppercase;
+            letter-spacing: -.04em; color: var(--fg); margin: 0;
+        }}
+        .statement-slide {{ display: flex; flex-direction: column; justify-content: center; flex: 1; }}
+        .statement-slide .stmt {{
+            font-family: 'Archivo Black', sans-serif; font-weight: 900;
+            font-size: clamp(2.5rem,7vw,5.5rem); line-height: .88;
+            letter-spacing: -.04em; text-transform: uppercase; color: var(--fg);
+        }}
+        .statement-slide .stmt em {{ color: {accent}; font-style: normal; }}
+    """,
+
+    # ── LEGACY (kept for old saved projects) ─────────────────────────────────
     "dark-editorial": """
         :root {{
             --accent: {accent};
@@ -630,56 +1166,59 @@ _THEME_SKELETONS: dict[str, str] = {
     """,
 }
 
-# Legacy theme aliases — map old names to new ones
+# Theme aliases — map legacy and shorthand names to canonical ones
 _THEME_ALIASES = {
-    "dark-gradient": "dark-editorial",
-    "dracula":       "dark-editorial",
-    "light":         "light-clean",
-    "minimal":       "minimal-mono",
+    "dark-editorial":  "terminal-brutalist",
+    "dark-gradient":   "terminal-brutalist",
+    "dracula":         "terminal-brutalist",
+    "minimal-mono":    "terminal-brutalist",
+    "minimal":         "terminal-brutalist",
+    "light-clean":     "editorial-press",
+    "light":           "editorial-press",
+    "bold-gradient":   "gradient-dreamscape",
 }
 
 _DEFAULT_THEME_CONFIG = {
-    "theme":        "dark-editorial",
-    "accent_color": "#6C8EF5",
+    "theme":        "editorial-press",
+    "accent_color": "#b8331f",
     "font_heading": "DM Serif Display",
-    "font_body":    "DM Sans",
+    "font_body":    "IBM Plex Sans",
 }
 
-# Font pairs for Google Fonts CDN
+# Font registry (all loaded via _ALL_FONTS_URL; kept for designer agent hints)
 _FONT_URLS = {
-    "DM Serif Display": "family=DM+Serif+Display:ital@0;1",
-    "Playfair Display":  "family=Playfair+Display:wght@400;600;700",
-    "Space Grotesk":     "family=Space+Grotesk:wght@400;500;600;700",
-    "Syne":              "family=Syne:wght@400;500;700;800",
-    "DM Sans":           "family=DM+Sans:wght@300;400;500;600;700",
-    "Inter":             "family=Inter:wght@300;400;500;600;700",
-    "Outfit":            "family=Outfit:wght@300;400;500;600;700",
+    "DM Serif Display":    "family=DM+Serif+Display:ital@0;1",
+    "Instrument Serif":    "family=Instrument+Serif:ital@0;1",
+    "Barlow Condensed":    "family=Barlow+Condensed:wght@300;500;700;900",
+    "Archivo Black":       "family=Archivo+Black",
+    "Space Grotesk":       "family=Space+Grotesk:wght@300;400;500;600;700",
+    "IBM Plex Sans":       "family=IBM+Plex+Sans:wght@300;400;500;700",
+    "IBM Plex Mono":       "family=IBM+Plex+Mono:wght@300;400;500;600",
+    "Space Mono":          "family=Space+Mono:wght@400;700",
+    "JetBrains Mono":      "family=JetBrains+Mono:wght@400;500;700;800",
 }
 
 
 def _build_theme_css(theme_config: dict) -> str:
     """Fill theme skeleton with accent color and font choices from designer agent."""
-    theme = theme_config.get("theme", "dark-editorial")
+    theme = theme_config.get("theme", "editorial-press")
     theme = _THEME_ALIASES.get(theme, theme)
     if theme not in _THEME_SKELETONS:
-        theme = "dark-editorial"
+        theme = "editorial-press"
     skeleton = _THEME_SKELETONS[theme]
     return skeleton.format(
-        accent=theme_config.get("accent_color", "#6C8EF5"),
+        accent=theme_config.get("accent_color", "#b8331f"),
         font_heading=theme_config.get("font_heading", "DM Serif Display"),
-        font_body=theme_config.get("font_body", "DM Sans"),
+        font_body=theme_config.get("font_body", "IBM Plex Sans"),
+    ) + _SHARED_CLASSES.format(
+        accent=theme_config.get("accent_color", "#b8331f"),
+        font_heading=theme_config.get("font_heading", "DM Serif Display"),
+        font_body=theme_config.get("font_body", "IBM Plex Sans"),
     )
 
 
 def _build_font_url(theme_config: dict) -> str:
-    """Build Google Fonts URL for the chosen fonts."""
-    families = set()
-    for key in ("font_heading", "font_body"):
-        f = theme_config.get(key, "")
-        if f in _FONT_URLS:
-            families.add(_FONT_URLS[f])
-    families.add("family=JetBrains+Mono:wght@400;500;600")
-    return "https://fonts.googleapis.com/css2?" + "&".join(sorted(families)) + "&display=swap"
+    return _ALL_FONTS_URL
 
 
 def _assemble(title: str, slides_html: list[str],
@@ -1588,34 +2127,48 @@ You are a presentation art director. Given a project description and domain, cho
 visual theme for a slide deck. Output ONLY a valid JSON object — no prose, no markdown fences.
 
 Theme options:
-  dark-editorial  — near-black bg, serif display headings, colored left-border accent.
-                    Best for: ML research, scientific work, technical deep-dives.
-  light-clean     — white bg, clean sans-serif, colored bottom-border on headings.
-                    Best for: software projects, product demos, business reports.
-  bold-gradient   — deep gradient bg, oversized display font, glowing metric callouts.
-                    Best for: startup pitches, launches, high-energy demos.
-  minimal-mono    — stark dark bg, monospace everything, no decoration.
-                    Best for: developer tools, CLI projects, systems work.
+  terminal-brutalist  — near-black bg, JetBrains Mono everywhere, terminal-green accent,
+                        scanline texture, build-log chrome. Ideal: dev tools, infra, CLI, systems.
+  editorial-press     — cream bg, DM Serif Display, scarlet accent, masthead header,
+                        magazine spread layout. Ideal: engineering reviews, quarterly reports, research.
+  gradient-dreamscape — deep purple bg with gradient mesh, Instrument Serif italic,
+                        glass cards, gradient text fills. Ideal: keynotes, AI/ML, startup demos.
+  blueprint           — navy bg with cyan engineering grid, Barlow Condensed 900,
+                        amber dimension lines, corner marks. Ideal: architecture, data pipelines, infra.
+  swiss-brutalism     — warm white bg, Archivo Black, hard black rules, single electric accent circle.
+                        Ideal: product pitches, company reviews, high-contrast bold statements.
 
-Accent color options (pick ONE that matches the project mood):
-  #6C8EF5  blue-violet   — trustworthy, analytical
-  #F5826C  coral         — energetic, creative
-  #50E3C2  teal          — technical, precise
-  #F5C842  amber         — optimistic, data-driven
-  #C084FC  purple        — innovative, AI/ML
-  #4ADE80  green         — growth, success metrics
-  #FB7185  rose          — bold, design-forward
+Accent color options (pick ONE that fits the project energy):
+  #00ff9c  terminal green — hacker, systems, infrastructure
+  #b8331f  scarlet        — authority, editorial, data journalism
+  #d946ef  vivid purple   — AI, generative, cutting-edge ML
+  #ffb84d  amber          — engineering, precision, technical drawing
+  #ff3d2e  electric red   — bold, urgent, product-first
+  #06b6d4  cyan           — data, analytics, technical precision
+  #f59e0b  gold           — premium, achievement, business metrics
+  #4ade80  green          — growth, success, deployment
 
-Font heading options: DM Serif Display, Playfair Display, Space Grotesk, Syne
-Font body options: DM Sans, Inter, Outfit
+Font heading options (pick based on theme):
+  terminal-brutalist  → JetBrains Mono
+  editorial-press     → DM Serif Display
+  gradient-dreamscape → Instrument Serif
+  blueprint           → Barlow Condensed
+  swiss-brutalism     → Archivo Black
+
+Font body options:
+  terminal-brutalist  → JetBrains Mono
+  editorial-press     → IBM Plex Sans
+  gradient-dreamscape → Space Grotesk
+  blueprint           → IBM Plex Mono
+  swiss-brutalism     → Space Grotesk
 
 Output schema:
 {
-  "theme": "dark-editorial | light-clean | bold-gradient | minimal-mono",
+  "theme": "terminal-brutalist | editorial-press | gradient-dreamscape | blueprint | swiss-brutalism",
   "accent_color": "#XXXXXX",
   "accent_color_name": "name",
-  "font_heading": "one of the heading options",
-  "font_body": "one of the body options",
+  "font_heading": "one of the heading options above",
+  "font_body": "one of the body options above",
   "reasoning": "one sentence explaining the choice"
 }
 """
@@ -1723,10 +2276,10 @@ def _designer_agent(
             console.print(f"  [dim]Designer Agent fallback ({exc})[/dim]")
     # Fallback: domain-based defaults
     defaults = {
-        "ml":       {"theme": "dark-editorial",  "accent_color": "#C084FC", "font_heading": "DM Serif Display",  "font_body": "DM Sans"},
-        "software": {"theme": "light-clean",      "accent_color": "#6C8EF5", "font_heading": "Space Grotesk",     "font_body": "Inter"},
-        "data":     {"theme": "dark-editorial",   "accent_color": "#50E3C2", "font_heading": "Playfair Display",  "font_body": "Outfit"},
-        "diff":     {"theme": "minimal-mono",     "accent_color": "#4ADE80", "font_heading": "Space Grotesk",     "font_body": "DM Sans"},
+        "ml":       {"theme": "gradient-dreamscape", "accent_color": "#d946ef", "font_heading": "Instrument Serif", "font_body": "Space Grotesk"},
+        "software": {"theme": "terminal-brutalist",  "accent_color": "#00ff9c", "font_heading": "JetBrains Mono",   "font_body": "JetBrains Mono"},
+        "data":     {"theme": "blueprint",           "accent_color": "#ffb84d", "font_heading": "Barlow Condensed", "font_body": "IBM Plex Mono"},
+        "diff":     {"theme": "editorial-press",     "accent_color": "#b8331f", "font_heading": "DM Serif Display", "font_body": "IBM Plex Sans"},
     }
     tc = defaults.get(domain, defaults["ml"])
     console.print(
@@ -1928,6 +2481,34 @@ def _render_slide_nollm(slide: dict, artifacts_map: dict) -> "str | None":
             '<section data-auto-animate>\n'
             f'  <h2>{heading}</h2>\n'
             f'  <div class="timeline-row">\n{steps}\n  </div>\n'
+            f'  <aside class="notes">{notes}</aside>\n'
+            '</section>'
+        )
+
+    # Section divider — big section number + title
+    if stype == "section_divider":
+        desc = bullets[0] if bullets else (insight[:160] if insight else "")
+        num  = str(slide.get("id", "")).zfill(2)
+        return (
+            '<section data-auto-animate>\n'
+            '  <div class="section-divider">\n'
+            f'    <span class="sec-num">{num}</span>\n'
+            f'    <p class="sec-label">Section {num}</p>\n'
+            f'    <h2 class="sec-title">{heading}</h2>\n'
+            + (f'    <p class="subtitle">{desc}</p>\n' if desc else '')
+            + '  </div>\n'
+            f'  <aside class="notes">{notes}</aside>\n'
+            '</section>'
+        )
+
+    # Statement — one big bold claim, no bullets
+    if stype == "statement":
+        return (
+            '<section data-auto-animate>\n'
+            '  <div class="statement-slide">\n'
+            f'    <p class="stmt">{heading}</p>\n'
+            + (f'    <p class="subtitle">{insight[:180]}</p>\n' if insight else '')
+            + '  </div>\n'
             f'  <aside class="notes">{notes}</aside>\n'
             '</section>'
         )

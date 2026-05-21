@@ -63,30 +63,92 @@ def _dual(english: str, sanskrit: str):
 
 @click.group()
 def cli():
-    """Sarathi — turn project results into polished presentations.
+    """Sarathi — AI-powered presentation generator for technical projects.
 
     \b
-    Quick start:
-      sarathi setup                          first-time setup
-      sarathi init "name" "description"      create a new project
-      sarathi join <name or folder>/         join an existing project (reads git history)
-      sarathi ls                             list all tracked projects
-      sarathi track <name or folder>/        watch + auto-generate on file changes
-      sarathi mark <name or folder>/ --name "v1"  plant a milestone
-      sarathi viraam                         end-of-session: mark + generate all projects
-      sarathi update                         morning briefing + pending changes
-      sarathi jobs                           background job queue
-      sarathi logs <id or name>              tail a job log
-      sarathi portfolio                      dashboard at localhost:7432
+    Sarathi watches your project folder and turns file changes, git history,
+    CSVs, and images into a polished slide deck — automatically. It runs a
+    multi-stage agentic pipeline: Designer → Vision → Planner → Visual → Coder.
+
+    ─────────────────────────────────────────────────────────
+    TYPICAL WORKFLOW
+    ─────────────────────────────────────────────────────────
 
     \b
-    Sanskrit aliases (same command, different name):
-      arambh  = init        yatra   = join      padav   = mark
-      bana    = make        safar   = track     viraam  = viraam (no alias needed)
-      haal    = status      dekh    = portfolio antar   = diff
-      suchi   = ls          vivaran = info
+    1. First-time setup (once):
+         sarathi setup
 
-    Run any command with --help for details.
+    \b
+    2. Start a new project:
+         sarathi init "churn-model" "Predicting customer churn with XGBoost"
+         # → creates churn-model/ with data/, plots/, notes/ subdirs
+
+    \b
+    3. Join an existing project (has git history):
+         sarathi join ./my-existing-project/
+
+    \b
+    4. Work — drop files into data/, plots/, notes/ — then generate:
+         sarathi track churn-model/        # watches + auto-regenerates on changes
+         sarathi make  churn-model/        # generate once and exit
+
+    \b
+    5. Plant a milestone (snapshot for diffs and versioning):
+         sarathi mark churn-model/ --name "baseline"
+         # ... keep working ...
+         sarathi mark churn-model/ --name "v2-with-smote"
+
+    \b
+    6. Generate a "what changed" deck between milestones:
+         sarathi diff churn-model/ --from baseline --to v2-with-smote
+
+    \b
+    7. End of session — mark all projects and queue generation:
+         sarathi viraam
+
+    \b
+    8. Next morning — see what finished overnight:
+         sarathi update
+
+    ─────────────────────────────────────────────────────────
+    PRESENTATION PIPELINE
+    ─────────────────────────────────────────────────────────
+
+    \b
+    Stage 0   CSV Chart Agent   Pre-renders CSVs to matplotlib charts
+    Stage 0.5 Designer Agent    Picks theme, accent color, and fonts
+    Stage 1   Vision Agent      Describes existing images and charts
+    Stage 2   Planner Agent     Builds a slide outline with visual strategy
+                                per slide: none | existing_file | python_chart | ai_image
+    Stage 3   Visual Agent      Generates charts (LLM writes matplotlib code)
+                                and AI images (DALL-E/Flux) from planner spec
+    Stage 4   Coder Agent       Renders each slide to Reveal.js HTML
+
+    ─────────────────────────────────────────────────────────
+    SLIDE THEMES  (sarathi themes — opens visual showcase)
+    ─────────────────────────────────────────────────────────
+
+    \b
+    editorial-press     Cream, DM Serif Display, scarlet accent — boardroom dossier
+    gradient-dreamscape Deep purple mesh, Instrument Serif italic — cinematic keynote
+    blueprint           Navy grid, Barlow Condensed, amber lines — engineering drawing
+    swiss-brutalism     Warm white, Archivo Black, electric red dot — poster energy
+    harvest             Forest green, bold orange — photography-ready product launch
+    neon-noir           Near-black, electric blue glow — SaaS / AI platform
+    broadsheet          Off-white, accent sidebar strip, huge numbers — business review
+    obsidian            Dark charcoal, lime green, circular motifs — analytics dashboard
+    kodachrome          Warm cream, terracotta, italic serif — editorial storytelling
+
+    ─────────────────────────────────────────────────────────
+    SANSKRIT ALIASES  (every command has one)
+    ─────────────────────────────────────────────────────────
+
+    \b
+    arambh = init     yatra  = join     padav  = mark     antar  = diff
+    bana   = make     safar  = track    suchi  = ls       vivaran= info
+    haal   = status   dekh   = portfolio
+
+    Run any command with --help for full options and examples.
     """
 
 
@@ -345,13 +407,29 @@ def _init_impl(name: str | None, description: str | None, model: str):
 @click.option("--model", default=DEFAULT_MODEL, show_default=True,
               help="Ollama model to use for generation.")
 def init_cmd(name, description, model):
-    """Create a new project folder with data/, plots/, and notes/ subdirs.
+    """Create a new project and register it with Sarathi.
 
-    Run without arguments for the full interactive wizard:
-      sarathi init
+    \b
+    Creates the project folder with the recommended structure:
+      <name>/
+        data/        drop CSVs, JSONs, any data files here
+        plots/       put generated charts and images here
+        notes/       markdown notes, READMEs, context docs
+        project.json sarathi metadata (model, theme, description)
 
-    Or pass name and description to pre-fill:
-      sarathi init my-project "Training a YOLOv8 detector"
+    \b
+    Usage:
+      sarathi init                                    # interactive wizard
+      sarathi init churn-model "XGBoost churn model"  # skip wizard
+      sarathi init churn-model "XGBoost churn model" --model llama3.2
+
+    \b
+    After init, generate your first presentation:
+      sarathi make churn-model/     # generate once
+      sarathi track churn-model/    # watch and regenerate on changes
+
+    \b
+    Sanskrit alias: arambh
     """
     _init_impl(name, description, model)
 
@@ -554,7 +632,32 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
               help="Run watcher in background — returns immediately, logs to ~/.config/sarathi/logs/.")
 @click.option("--_job-id", "job_id", default="", hidden=True)
 def track_cmd(folder, once, model, edit_outline, fast, offload, verbose, bg, job_id):
-    """Watch a project folder and regenerate on every file change."""
+    """Watch a folder and regenerate the presentation on every file change.
+
+    \b
+    Sarathi monitors data/, plots/, notes/, and the project root. Any file
+    save triggers the full agentic pipeline: Designer → Vision → Planner →
+    Visual Agent (charts + AI images) → Coder → HTML output.
+
+    \b
+    Usage:
+      sarathi track churn-model/                  # foreground watcher
+      sarathi track churn-model/ --bg             # background watcher
+      sarathi track churn-model/ --once           # generate once and exit (same as 'make')
+      sarathi track churn-model/ --fast           # single-pass, ~3× faster, lower quality
+      sarathi track churn-model/ --model qwen3.5  # override model for this run
+      sarathi track churn-model/ --edit-outline   # save outline.json for manual editing first
+      sarathi track churn-model/ -v               # print every prompt and LLM response
+
+    \b
+    Output:
+      <folder>/output/presentation.html   open in browser, auto-refreshes
+      <folder>/output/presentation.pptx  PowerPoint export
+
+    \b
+    Background jobs: use 'sarathi jobs' and 'sarathi logs <id>' to monitor.
+    Sanskrit alias: safar
+    """
     folder = _resolve_folder(folder)
     if bg:
         args = ["track", folder]
@@ -606,7 +709,35 @@ cli.add_command(yatra_cmd)
               help="Generate in background — returns immediately.")
 @click.option("--_job-id", "job_id", default="", hidden=True)
 def make_cmd(folder, model, edit_outline, fast, offload, verbose, bg, job_id):
-    """Generate a presentation once and exit (no watching)."""
+    """Generate a presentation once and exit.
+
+    \b
+    Runs the full pipeline once — no file watching. Equivalent to
+    'sarathi track --once'. Use this for CI, cron jobs, or one-shot generation.
+
+    \b
+    Pipeline stages:
+      0   CSV Chart Agent   renders CSVs → matplotlib charts
+      0.5 Designer Agent    picks theme, accent, fonts
+      1   Vision Agent      describes any images in the project
+      2   Planner Agent     builds slide outline with per-slide visual strategy
+      3   Visual Agent      python_chart → matplotlib via LLM code gen
+                            ai_image    → DALL-E/Flux with specific prompt
+      4   Coder Agent       renders slides → Reveal.js HTML
+
+    \b
+    Usage:
+      sarathi make churn-model/
+      sarathi make churn-model/ --fast            # 3× faster, single-pass
+      sarathi make churn-model/ --bg              # run in background
+      sarathi make churn-model/ --edit-outline    # stop after planning, save outline.json
+      sarathi make churn-model/ --model llama3.2  # use a different model
+      sarathi make churn-model/ -v                # print all prompts and responses
+
+    \b
+    Output written to <folder>/output/presentation.html
+    Sanskrit alias: bana
+    """
     folder = _resolve_folder(folder)
     if bg:
         args = ["make", folder, "--once"]
@@ -670,9 +801,29 @@ def _mark_impl(folder: str, name: str):
 @click.argument("folder", type=str)
 @click.option("--name", required=True, help="Milestone label.")
 def mark_cmd(folder, name):
-    """Plant a named milestone in the project timeline.
+    """Snapshot the project state as a named milestone.
 
-    Snapshots the current file state so you can diff or regenerate at this point later.
+    \b
+    A milestone records:
+      - A SHA1 hash of every file in the project folder
+      - A copy of the current presentation (output/presentation.html/pptx)
+        archived to output/vN-<label>/
+
+    \b
+    Milestones are used for:
+      - Version history — 'sarathi log' shows the full timeline
+      - Diff decks      — 'sarathi diff --from X --to Y' generates a "what changed" presentation
+      - Regeneration    — re-run the pipeline at any snapshot point
+
+    \b
+    Usage:
+      sarathi mark churn-model/ --name "baseline"
+      sarathi mark churn-model/ --name "v2-smote"
+      sarathi mark churn-model/ --name "final-submission"
+
+    \b
+    Tip: run 'sarathi viraam' at end of day to mark all active projects at once.
+    Sanskrit alias: padav
     """
     folder = _resolve_folder(folder)
     _mark_impl(folder, name)
@@ -695,7 +846,21 @@ cli.add_command(padav_cmd)
 
 @click.command("themes")
 def themes_cmd():
-    """Open a visual showcase of all available slide themes in your browser."""
+    """Open a visual showcase of all 9 slide themes in your browser.
+
+    \b
+    Generates a comparison page showing 9 slide types per theme:
+    title · bullets · grid · metric · comparison · statement · table · chart · divider
+
+    \b
+    Themes available:
+      editorial-press   gradient-dreamscape   blueprint   swiss-brutalism
+      harvest           neon-noir             broadsheet  obsidian   kodachrome
+
+    \b
+    To set a theme for a project: sarathi theme <folder>/ --set <theme-name>
+    The Designer Agent auto-selects a theme per run based on project domain.
+    """
     import tempfile, webbrowser
     from .theme_preview import generate_showcase
     out = Path(tempfile.mkdtemp()) / "sarathi_themes.html"
@@ -887,7 +1052,29 @@ cli.add_command(clean_cmd)
 @click.option("--verbose", "-v", is_flag=True,
               help="Show prompt, full response, and per-phase timing for each model.")
 def models_cmd(benchmark, verbose):
-    """List Ollama models on this machine, flagging vision-capable ones."""
+    """List local Ollama models, flagging vision-capable ones.
+
+    \b
+    Shows all pulled models with size and vision capability.
+    Use --benchmark to measure actual generation speed (tok/s) for each model.
+
+    \b
+    Sarathi roles and recommended models:
+      Planner  qwen3.5, llama3.2, mistral-small  — builds slide narrative outline
+      Coder    qwen3.5, llama3.2                  — writes Reveal.js HTML per slide
+      Vision   llava, moondream, gemma3            — describes images/charts
+      Fast     qwen3.5:1.5b, smollm               — quick single-pass generation
+
+    \b
+    Usage:
+      sarathi models                 # list all models
+      sarathi models --benchmark     # speed test each model
+      sarathi models -b -v           # benchmark with full output
+
+    \b
+    To pull a model: sarathi pull <model-name>
+    To reconfigure roles: sarathi setup
+    """
     import shutil, ollama
 
     try:
@@ -954,7 +1141,10 @@ cli.add_command(models_cmd)
 
 # ── theme ─────────────────────────────────────────────────────────────────────
 
-THEMES = ["dark-gradient", "dracula", "light", "minimal"]
+THEMES = [
+    "editorial-press", "gradient-dreamscape", "blueprint", "swiss-brutalism",
+    "harvest", "neon-noir", "broadsheet", "obsidian", "kodachrome",
+]
 
 
 @click.command("theme")
@@ -962,7 +1152,29 @@ THEMES = ["dark-gradient", "dracula", "light", "minimal"]
 @click.option("--set", "theme_name", type=click.Choice(THEMES), required=True,
               help="Theme name.")
 def theme_cmd(folder, theme_name):
-    """Set the presentation theme for a project."""
+    """Set the slide theme for a project.
+
+    \b
+    Available themes:
+      editorial-press     Cream, DM Serif Display, scarlet — boardroom dossier
+      gradient-dreamscape Deep purple mesh, Instrument Serif italic — cinematic keynote
+      blueprint           Navy grid, Barlow Condensed 900, amber — engineering drawing
+      swiss-brutalism     Warm white, Archivo Black, electric red dot — poster / bold
+      harvest             Forest green, orange, Barlow — photography-ready launch
+      neon-noir           Near-black, electric blue glow, Space Grotesk — SaaS / AI
+      broadsheet          Off-white, accent sidebar strip, huge numbers — business review
+      obsidian            Dark charcoal, lime green, circular motifs — analytics
+      kodachrome          Warm cream, terracotta, italic DM Serif — editorial storytelling
+
+    \b
+    Usage:
+      sarathi theme churn-model/ --set editorial-press
+      sarathi theme churn-model/ --set neon-noir
+
+    \b
+    To see all themes visually: sarathi themes
+    The Designer Agent also auto-selects a theme each run based on project domain.
+    """
     folder = _resolve_folder(folder)
     project_dir = Path(folder)
     trk.init_tracker(project_dir)
@@ -1077,7 +1289,25 @@ def _diff_impl(folder: str, from_label: str, to_label: str, model: str | None):
 @click.option("--to", "to_label", required=True, help="Ending milestone label.")
 @click.option("--model", default=None)
 def diff_cmd(folder, from_label, to_label, model):
-    """Generate a "what changed" presentation between two milestones."""
+    """Generate a "what changed" presentation between two milestones.
+
+    \b
+    Compares two milestone snapshots and generates a progress-report deck
+    that shows: new files added, files modified, commits between milestones,
+    days elapsed, and a narrative of what changed and why it matters.
+
+    \b
+    Usage:
+      sarathi mark churn-model/ --name "baseline"
+      # ... do work ...
+      sarathi mark churn-model/ --name "v2-smote"
+      sarathi diff churn-model/ --from baseline --to v2-smote
+
+    \b
+    Output: output/diff_baseline_v2-smote.html
+    To list your milestones: sarathi log churn-model/
+    Sanskrit alias: antar
+    """
     folder = _resolve_folder(folder)
     _diff_impl(folder, from_label, to_label, model)
 
@@ -1142,7 +1372,25 @@ cli.add_command(portfolio_cmd)
 
 @click.command("setup")
 def setup_cmd():
-    """Interactive setup: detect hardware, pick and pull models, configure Sarathi."""
+    """First-time setup: detect hardware, pick models, configure Sarathi.
+
+    \b
+    Run once after installing. The wizard:
+      1. Detects available RAM and GPU
+      2. Recommends and optionally pulls Ollama models for each role:
+           Planner  — builds the slide outline (needs instruction-following)
+           Coder    — writes Reveal.js HTML per slide
+           Vision   — describes images and charts (needs multimodal capability)
+           Fast     — single-pass fallback for quick generations
+      3. Saves config to ~/.config/sarathi/config.json
+
+    \b
+    Re-run anytime to update models or reconfigure:
+      sarathi setup
+
+    \b
+    After setup: sarathi init "my-project" "description"
+    """
     setup_wizard.run()
 
 
@@ -1262,19 +1510,28 @@ cli.add_command(vivaran_cmd)
 @click.option("--bg", is_flag=True,
               help="Queue generation in background after setup — returns immediately.")
 def join_cmd(folder, model, once, fast, offload, verbose, bg):
-    """Join an existing project — reads git history and local changes as context.
+    """Register and generate for an existing project.
 
     \b
-    Use this when you're picking up a project that already has work done:
-      sarathi join my-project/        scan git log, diff, files → generate
-      sarathi join my-project/ --once generate once and exit
+    Use when picking up a project that already has work done — Sarathi reads
+    git history and builds a presentation from where things stand right now.
+
     \b
-    Sarathi will read:
-      - git log (last 30 commits, commit messages, dates)
-      - uncommitted changes (git diff)
-      - most actively changed files
-      - all result files (images, CSVs, notes, code)
-    and build a presentation that tells the story of where the project is now.
+    Context sources read automatically:
+      - git log     last 30 commits with messages and dates
+      - git diff    uncommitted changes (current work in progress)
+      - Files       images, CSVs, notes, code in the project folder
+      - README/CLAUDE.md  project description and goals
+
+    \b
+    Usage:
+      sarathi join ./my-research-project/
+      sarathi join ./my-research-project/ --once   # generate once, then exit
+      sarathi join ./my-research-project/ --bg     # run in background
+
+    \b
+    If no project.json exists, the wizard will run to register the project.
+    Sanskrit alias: yatra
     """
     folder = _resolve_folder(folder)
     project_dir = Path(folder)
@@ -1496,13 +1753,29 @@ def _viraam_impl(milestone_name: str, fast: bool, offload: bool, model: str | No
 @click.option("--offload", is_flag=True, help="Unload models between projects.")
 @click.option("--model", default=None, help="Override model for all projects.")
 def viraam_cmd(name, fast, offload, model):
-    """End-of-session: mark milestones, queue generation for pending projects.
+    """End-of-session: mark milestones and queue generation for all active projects.
 
     \b
-    viraam (Sanskrit: pause/rest) — run at the end of your work session.
-    Milestones are marked immediately (fast).
-    Generation runs in the background queue — one project at a time.
-    Check progress tomorrow morning with: sarathi update
+    viraam (Sanskrit: pause/rest) — your end-of-day command.
+
+    \b
+    What it does:
+      1. Marks a timestamped milestone on every registered project
+      2. Archives the current presentation as a versioned snapshot (vN-<label>/)
+      3. Queues generation jobs in the background for any project with new files
+      4. Returns immediately — generation happens overnight
+
+    \b
+    Usage:
+      sarathi viraam                          # auto-labels milestone with timestamp
+      sarathi viraam --name "day-3-results"   # custom label
+      sarathi viraam --fast                   # faster single-pass for all projects
+
+    \b
+    Next morning:
+      sarathi update    # shows what finished, what failed, what's still pending
+      sarathi jobs      # detailed job status
+      sarathi logs <id> # tail the log for a specific job
     """
     _viraam_impl(milestone_name=name, fast=fast, offload=offload, model=model)
 
@@ -1616,7 +1889,11 @@ cli.add_command(jobs_cmd)
 
 @click.command("ls")
 def ls_cmd():
-    """List all tracked projects with their current status."""
+    """List all registered projects with status, model, and last generation time.
+
+    Shows: project name, path, model, theme, watcher status, last generated timestamp.
+    Sanskrit alias: suchi
+    """
     registry = ptf._load_registry()
     if not registry:
         console.print("[dim]No projects tracked yet. Run [bold]sarathi init[/bold] or [bold]sarathi join[/bold].[/dim]")

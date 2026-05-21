@@ -187,6 +187,98 @@ def detect_chart_type(df) -> tuple[str, str, list[str]]:
     return "bar", x, y[:1]
 
 
+def render_from_prompt(
+    description: str,
+    data_snippets: list[str],
+    accent: str = _ACCENT,
+    viz_dir: Path | None = None,
+    chat_fn=None,
+) -> "ResultFile | None":
+    """Ask an LLM to write matplotlib code from a chart description, then execute it.
+
+    `chat_fn` must be a callable(model, system, user) → str. Passed in from builder
+    to avoid circular imports.
+    """
+    if not chat_fn:
+        return None
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import base64, io, tempfile, textwrap
+
+    accent_safe = accent if accent.startswith("#") else _ACCENT
+    bg = "#0d0d1a"
+
+    data_block = "\n".join(f"[DATA]\n{s}" for s in data_snippets) if data_snippets else ""
+
+    system = f"""\
+You are a matplotlib code generator. Write ONLY the Python plotting statements \
+that fill an already-created figure.
+
+The execution context provides:
+  fig, ax    — created with figsize=(12, 6.75), dpi=100
+  BG         = "{bg}"
+  ACCENT     = "{accent_safe}"
+  FG         = "#e0e0e0"
+  colors     = [ACCENT, "#f48fb1", "#a5d6a7", "#ffcc80", "#ce93d8"]
+
+Rules:
+- Use only ax.* and plt.* calls. No import statements. No plt.show(). No fig.savefig().
+- Style the chart to match the dark background: use BG for backgrounds, ACCENT for primary series.
+- Call ax.set_facecolor(BG) and fig.patch.set_facecolor(BG) at the start.
+- Set tick/label colors to FG.
+- Output ONLY executable Python — no markdown fences, no prose.
+"""
+
+    user = (
+        f"Chart specification:\n{description}\n\n"
+        + (f"{data_block}\n\n" if data_block else "")
+        + "Write the matplotlib plotting code now."
+    )
+
+    try:
+        raw_code = chat_fn(system=system, user=user)
+        # Strip any markdown fences
+        code = raw_code.strip()
+        if code.startswith("```"):
+            code = "\n".join(code.split("\n")[1:])
+        if code.endswith("```"):
+            code = "\n".join(code.split("\n")[:-1])
+
+        fig, ax = plt.subplots(figsize=(_W, _H), dpi=_DPI)
+        ns = {
+            "fig": fig, "ax": ax,
+            "plt": plt,
+            "BG": bg, "ACCENT": accent_safe, "FG": _FG,
+            "colors": [accent_safe, "#f48fb1", "#a5d6a7", "#ffcc80", "#ce93d8"],
+        }
+        exec(textwrap.dedent(code), ns)  # noqa: S102
+        plt.tight_layout()
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=_DPI, bbox_inches="tight", facecolor=bg)
+        plt.close(fig)
+        buf.seek(0)
+        b64 = base64.b64encode(buf.read()).decode()
+
+        if viz_dir:
+            import hashlib, pathlib
+            slug = hashlib.md5(description.encode()).hexdigest()[:8]
+            out = pathlib.Path(viz_dir) / f"gen_{slug}.png"
+            out.write_bytes(base64.b64decode(b64))
+
+        from .scanner import ResultFile
+        return ResultFile(
+            path=f"_generated_{hashlib.md5(description.encode()).hexdigest()[:8]}.png",
+            filename="generated_chart.png",
+            type="image",
+            content=f"data:image/png;base64,{b64}",
+        )
+    except Exception:
+        return None
+
+
 def _style_axes(ax) -> None:
     ax.tick_params(colors=_FG, which="both")
     ax.yaxis.label.set_color(_FG)

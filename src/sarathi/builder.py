@@ -129,12 +129,57 @@ OUTPUT SCHEMA
       "insight": "2-3 sentences grounded in real content. WHAT does this slide show from the actual files? WHY does it matter for this project specifically?",
       "speaker_notes": "3-4 sentences that expand on the slide. Reference specific details from the files. What should the presenter emphasize?",
       "layout_hint": "r-fit-text | r-stretch | r-stack | auto-animate | (empty)",
-      "bullet_points": ["3-5 specific, complete bullets — each references real content"]
+      "bullet_points": ["3-5 specific, complete bullets — each references real content"],
+      "visual_type": "none | existing_file | python_chart | ai_image",
+      "visual_prompt": "Exact generation instruction — see VISUAL STRATEGY section. Empty string if visual_type is none or existing_file."
     }
   ]
 }
 
-══════════════════════
+════════════════════════════════════════
+VISUAL STRATEGY — SET FOR EVERY SLIDE
+════════════════════════════════════
+Every slide needs a visual_type decision. Think of it as choosing the right visual medium:
+
+visual_type options:
+  none          → no image needed. Use for: bullets, comparison, code, metric callout, timeline, section_divider, statement.
+  existing_file → an image/chart/screenshot already exists in the artifact list. List the path in artifacts[].
+  python_chart  → generate a matplotlib chart from REAL DATA in the project files.
+                  Use when: CSV rows exist, specific metrics are mentioned, before/after numbers are present.
+  ai_image      → generate a conceptual AI image. Use ONLY for architecture diagrams, system flows,
+                  abstract concepts that have no data backing. MAX 2 per deck.
+
+Decision tree — pick the FIRST matching rule:
+  1. Artifact list has an image/chart file for this slide → existing_file
+  2. Slide has numeric data in CSVs/files that a chart would clarify → python_chart
+  3. Slide needs an architecture/flow/concept diagram not in files → ai_image
+  4. Everything else → none
+
+visual_prompt rules (REQUIRED for python_chart and ai_image, empty for others):
+
+  python_chart — must be a precise chart specification:
+    "Chart type: bar | line | scatter | heatmap | hbar | pie
+     X-axis: [label]. Y-axis: [label] (unit).
+     Data: [actual values from files — name every data point].
+     Highlight: [which bar/line to emphasize and why].
+     Title: '[exact title string]'."
+
+    GOOD: "Chart type: hbar. Y-axis: ['Before (Q1)', 'After (Q2)']. X-axis: P99 Latency (ms).
+           Data: Q1=840, Q2=47. Highlight Q2 bar in accent color. Title: 'Latency: 94% Reduction'."
+    BAD:  "bar chart of latency improvements"
+
+  ai_image — must describe exact visual elements, layout, and relationships:
+    "Style: [clean technical | minimal flat | isometric].
+     Elements: [list every box/arrow/icon and its label].
+     Layout: [left-to-right | top-to-bottom | radial].
+     NO decorative gradients, NO text inside shapes."
+
+    GOOD: "Style: clean technical diagram. Elements: three labeled boxes in a row —
+           'Producer (ML Model)' → arrow labeled '12× throughput' → 'Kafka' → arrow → 'Consumer (Sarathi)'.
+           Layout: left-to-right. Dark background."
+    BAD:  "system architecture diagram"
+
+══════════════════
 SLIDE COUNT & ORDERING
 ══════════════════════
 - 10 to 14 slides total
@@ -1742,9 +1787,15 @@ def generate(
             "mode": "fast",
         }
 
-    # ═════════════════════════════════════════════════════
-    # AGENTIC PIPELINE  Stage 0 → 1 → 2 → 3 → 4
-    # ═════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════
+    # AGENTIC PIPELINE
+    #   0  CSV Chart Agent  — pre-render CSVs so planner can see them
+    #   0.5 Designer Agent  — theme + accent + fonts
+    #   1   Vision Agent    — describe existing images
+    #   2   Planner Agent   — outline with visual_type/visual_prompt per slide
+    #   3   Visual Agent    — python_chart → matplotlib, ai_image → API
+    #   4   Coder Agent     — render each slide to HTML
+    # ═══════════════════════════════════════════════════════════════
 
     console.print("[bold][sarathi] Agentic pipeline starting...[/bold]")
     console.print()
@@ -1799,16 +1850,19 @@ def generate(
             return {}
     console.print()
 
-    # Stage 3 — Image Gen Agent (optional)
-    console.print("[dim][sarathi] Stage 3 — Image Gen Agent[/dim]")
-    if image_gen_enabled and image_gen_model and using_cloud:
-        new_arts = _image_gen_agent(
-            outline, artifacts_map, image_gen_model,
-            cloud_api_url, cloud_api_key, console,
+    # Stage 3 — Visual Agent (python_chart + ai_image dispatch based on planner decisions)
+    console.print("[dim][sarathi] Stage 3 — Visual Agent[/dim]")
+    py_count = sum(1 for s in outline.get("slides", []) if s.get("visual_type") == "python_chart")
+    ai_count = sum(1 for s in outline.get("slides", []) if s.get("visual_type") == "ai_image")
+    if py_count or ai_count:
+        new_arts = _visual_agent(
+            outline, artifacts_map, _coder, project_dir, theme_config,
+            image_gen_model if image_gen_enabled else "",
+            cloud_api_url, cloud_api_key, console, verbose=verbose,
         )
         artifacts_map.update(new_arts)
     else:
-        console.print("  [dim]Image Gen: disabled[/dim]")
+        console.print("  [dim]Visual Agent: no python_chart or ai_image slides in outline[/dim]")
     console.print()
 
     # Stage 4 — Coder Agent
@@ -2603,74 +2657,118 @@ def _designer_agent(
     return tc
 
 
-def _image_gen_agent(
+def _visual_agent(
     outline: dict,
     artifacts_map: "dict[str, ResultFile]",
+    model: str,
+    project_dir: "Path",
+    theme_config: dict,
     image_gen_model: str,
     cloud_api_url: str,
     cloud_api_key: str,
     console,
+    verbose: bool = False,
 ) -> "dict[str, ResultFile]":
-    """Generate AI images for slides that lack visual artifacts (FLUX/DALL-E)."""
-    if not (image_gen_model and cloud_api_url and cloud_api_key):
-        return {}
+    """Post-planner visual generation: dispatch python_chart and ai_image slides.
 
-    from openai import OpenAI
-    from . import keystore as _ks
+    Reads visual_type / visual_prompt from each slide in the outline and:
+      - python_chart → LLM writes matplotlib code → executed locally
+      - ai_image     → calls image gen API with the specific visual_prompt
+      - existing_file / none → no action
+    """
+    from . import viz as viz_module
 
-    client = OpenAI(api_key=_ks.decrypt(cloud_api_key), base_url=cloud_api_url)
-
-    # Identify slides that want an image but have no matching artifact
-    candidates = []
-    for slide in outline.get("slides", []):
-        if slide.get("type") not in ("image", "chart"):
-            continue
-        has = any(
-            _lookup_artifact(a, artifacts_map)
-            for a in slide.get("artifacts", [])
-        )
-        if not has:
-            candidates.append(slide)
-
-    candidates = candidates[:3]  # max 3 to keep latency sane
-    if not candidates:
-        return {}
-
-    console.print(
-        f"  [dim]Image Gen Agent:[/dim] generating {len(candidates)} image(s) via {image_gen_model}"
-    )
     new_artifacts: dict[str, ResultFile] = {}
+    accent = theme_config.get("accent_color", "#6C8EF5")
+    viz_dir = project_dir / ".sarathi" / "viz"
+    viz_dir.mkdir(parents=True, exist_ok=True)
 
-    for slide in candidates:
-        prompt = (
-            f"Technical illustration: {slide['heading']}. "
-            f"{slide.get('insight', '')[:200]}. "
-            "Clean minimal style, dark background, professional presentation graphic."
+    py_slides  = [s for s in outline.get("slides", []) if s.get("visual_type") == "python_chart"]
+    ai_slides  = [s for s in outline.get("slides", []) if s.get("visual_type") == "ai_image"]
+
+    # ── Python chart generation ───────────────────────────────────────────────
+    if py_slides:
+        console.print(f"  [dim]Visual Agent:[/dim] rendering {len(py_slides)} python_chart(s)...")
+
+    for slide in py_slides:
+        prompt = slide.get("visual_prompt", "")
+        if not prompt:
+            continue
+        # Gather any CSV data the slide references as context
+        data_snippets = []
+        for art_path in slide.get("artifacts", []):
+            rf = _lookup_artifact(art_path, artifacts_map)
+            if rf and rf.type == "data":
+                data_snippets.append(rf.content[:1200])
+
+        def _chat_for_viz(system: str, user: str) -> str:
+            return _chat(model, system, user, verbose=verbose)
+
+        rf = viz_module.render_from_prompt(
+            description=prompt,
+            data_snippets=data_snippets,
+            accent=accent,
+            viz_dir=viz_dir,
+            chat_fn=_chat_for_viz,
         )
-        try:
-            resp = client.images.generate(
-                model=image_gen_model,
-                prompt=prompt,
-                size="512x512",
-                response_format="b64_json",
-                n=1,
-            )
-            b64  = resp.data[0].b64_json
-            data_uri = f"data:image/png;base64,{b64}"
-            key  = f"_generated_slide_{slide['id']}"
-            rf   = ResultFile(path=key, filename=f"{key}.png",
-                              type="image", content=data_uri)
-            new_artifacts[key] = rf
-            slide.setdefault("artifacts", []).insert(0, key)
+        if rf:
+            new_artifacts[rf.path] = rf
+            slide.setdefault("artifacts", []).insert(0, rf.path)
             console.print(
-                f"  [green]✓ Image Gen:[/green] slide {slide['id']} — "
-                f"{slide['heading'][:50]}"
+                f"  [green]✓ Chart:[/green] slide {slide.get('id')} — "
+                f"{slide.get('heading', '')[:55]}"
             )
-        except Exception as exc:
+        else:
             console.print(
-                f"  [yellow]⚠ Image Gen:[/yellow] slide {slide['id']} failed "
-                f"({exc.__class__.__name__})"
+                f"  [yellow]⚠ Chart failed:[/yellow] slide {slide.get('id')} — "
+                f"will render as text"
             )
+
+    # ── AI image generation ───────────────────────────────────────────────────
+    if ai_slides and image_gen_model and cloud_api_url and cloud_api_key:
+        ai_slides = ai_slides[:2]  # enforce max 2 per deck
+        console.print(f"  [dim]Visual Agent:[/dim] generating {len(ai_slides)} ai_image(s) via {image_gen_model}...")
+
+        from openai import OpenAI
+        from . import keystore as _ks
+        client = OpenAI(api_key=_ks.decrypt(cloud_api_key), base_url=cloud_api_url)
+
+        for slide in ai_slides:
+            visual_prompt = slide.get("visual_prompt", "")
+            if not visual_prompt:
+                visual_prompt = (
+                    f"Technical illustration: {slide.get('heading', '')}. "
+                    f"{slide.get('insight', '')[:200]}. "
+                    "Clean minimal style, dark background, professional presentation graphic."
+                )
+            try:
+                resp = client.images.generate(
+                    model=image_gen_model,
+                    prompt=visual_prompt,
+                    size="1024x576",
+                    response_format="b64_json",
+                    n=1,
+                )
+                b64 = resp.data[0].b64_json
+                key = f"_ai_img_{slide['id']}"
+                rf  = ResultFile(path=key, filename=f"{key}.png",
+                                 type="image", content=f"data:image/png;base64,{b64}")
+                new_artifacts[key] = rf
+                slide.setdefault("artifacts", []).insert(0, key)
+                console.print(
+                    f"  [green]✓ AI image:[/green] slide {slide.get('id')} — "
+                    f"{slide.get('heading', '')[:55]}"
+                )
+            except Exception as exc:
+                console.print(
+                    f"  [yellow]⚠ AI image failed:[/yellow] slide {slide.get('id')} "
+                    f"({exc.__class__.__name__})"
+                )
+    elif ai_slides and not (image_gen_model and cloud_api_url and cloud_api_key):
+        console.print(
+            f"  [dim]Visual Agent:[/dim] {len(ai_slides)} ai_image slide(s) skipped "
+            f"— no image gen API configured"
+        )
 
     return new_artifacts
 

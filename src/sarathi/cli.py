@@ -66,88 +66,82 @@ def cli():
     """Sarathi — AI-powered presentation generator for technical projects.
 
     \b
-    Sarathi watches your project folder and turns file changes, git history,
-    CSVs, and images into a polished slide deck — automatically. It runs a
-    multi-stage agentic pipeline: Designer → Vision → Planner → Visual → Coder.
-
-    ─────────────────────────────────────────────────────────
-    TYPICAL WORKFLOW
-    ─────────────────────────────────────────────────────────
+    Watches your project folder and turns file changes, git history, CSVs,
+    and images into a polished slide deck automatically. Multi-stage pipeline:
+    Designer → Vision → Planner → Visual Agent → Coder.
 
     \b
-    1. First-time setup (once):
-         sarathi setup
+    ── TYPICAL WORKFLOW ──────────────────────────────────────────────────
 
     \b
-    2. Start a new project:
-         sarathi init "churn-model" "Predicting customer churn with XGBoost"
-         # → creates churn-model/ with data/, plots/, notes/ subdirs
+      1. sarathi setup
+            First-time setup — detect hardware, pick and pull models.
 
     \b
-    3. Join an existing project (has git history):
-         sarathi join ./my-existing-project/
+      2. sarathi init "churn-model" "Predicting churn with XGBoost"
+            Create a new project. Adds data/, plots/, notes/ subdirs.
 
     \b
-    4. Work — drop files into data/, plots/, notes/ — then generate:
-         sarathi track churn-model/        # watches + auto-regenerates on changes
-         sarathi make  churn-model/        # generate once and exit
+      3. sarathi join ./existing-project/
+            Register an existing project — reads git history as context.
 
     \b
-    5. Plant a milestone (snapshot for diffs and versioning):
-         sarathi mark churn-model/ --name "baseline"
-         # ... keep working ...
-         sarathi mark churn-model/ --name "v2-with-smote"
+      4. sarathi track churn-model/        (or: sarathi make for one-shot)
+            Watch for file changes and regenerate the deck automatically.
+            Output: output/presentation.html + output/presentation.pptx
 
     \b
-    6. Generate a "what changed" deck between milestones:
-         sarathi diff churn-model/ --from baseline --to v2-with-smote
+      5. sarathi mark churn-model/ --name "v1"
+            Snapshot the current file state as a named milestone.
 
     \b
-    7. End of session — mark all projects and queue generation:
-         sarathi viraam
+      6. sarathi diff churn-model/ --from v1 --to v2
+            Generate a "what changed" deck between two milestones.
 
     \b
-    8. Next morning — see what finished overnight:
-         sarathi update
-
-    ─────────────────────────────────────────────────────────
-    PRESENTATION PIPELINE
-    ─────────────────────────────────────────────────────────
+      7. sarathi viraam
+            End of session — mark all projects + queue overnight generation.
 
     \b
-    Stage 0   CSV Chart Agent   Pre-renders CSVs to matplotlib charts
-    Stage 0.5 Designer Agent    Picks theme, accent color, and fonts
-    Stage 1   Vision Agent      Describes existing images and charts
-    Stage 2   Planner Agent     Builds a slide outline with visual strategy
-                                per slide: none | existing_file | python_chart | ai_image
-    Stage 3   Visual Agent      Generates charts (LLM writes matplotlib code)
-                                and AI images (DALL-E/Flux) from planner spec
-    Stage 4   Coder Agent       Renders each slide to Reveal.js HTML
-
-    ─────────────────────────────────────────────────────────
-    SLIDE THEMES  (sarathi themes — opens visual showcase)
-    ─────────────────────────────────────────────────────────
+      8. sarathi update
+            Morning briefing — see what generated, what failed, what's pending.
 
     \b
-    editorial-press     Cream, DM Serif Display, scarlet accent — boardroom dossier
-    gradient-dreamscape Deep purple mesh, Instrument Serif italic — cinematic keynote
-    blueprint           Navy grid, Barlow Condensed, amber lines — engineering drawing
-    swiss-brutalism     Warm white, Archivo Black, electric red dot — poster energy
-    harvest             Forest green, bold orange — photography-ready product launch
-    neon-noir           Near-black, electric blue glow — SaaS / AI platform
-    broadsheet          Off-white, accent sidebar strip, huge numbers — business review
-    obsidian            Dark charcoal, lime green, circular motifs — analytics dashboard
-    kodachrome          Warm cream, terracotta, italic serif — editorial storytelling
-
-    ─────────────────────────────────────────────────────────
-    SANSKRIT ALIASES  (every command has one)
-    ─────────────────────────────────────────────────────────
+    ── PIPELINE STAGES ───────────────────────────────────────────────────
 
     \b
-    arambh = init     yatra  = join     padav  = mark     antar  = diff
-    bana   = make     safar  = track    suchi  = ls       vivaran= info
-    haal   = status   dekh   = portfolio
+      0    CSV Chart Agent   Render CSVs → matplotlib charts
+      0.5  Designer Agent    Pick theme, accent color, and fonts
+      1    Vision Agent      Describe existing images and charts
+      2    Planner Agent     Build outline; decide per slide:
+                             none | existing_file | python_chart | ai_image
+      3    Visual Agent      python_chart → LLM writes + runs matplotlib code
+                             ai_image     → DALL-E/Flux with specific prompt
+      4    Coder Agent       Render each slide to Reveal.js HTML
 
+    \b
+    ── THEMES  (sarathi themes — opens visual showcase) ──────────────────
+
+    \b
+      editorial-press     Cream, DM Serif, scarlet — boardroom dossier
+      gradient-dreamscape Deep purple mesh, italic serif — cinematic keynote
+      blueprint           Navy grid, Barlow Condensed, amber — engineering
+      swiss-brutalism     Warm white, Archivo Black, red dot — poster
+      harvest             Forest green, orange — photography-ready launch
+      neon-noir           Near-black, electric blue glow — SaaS / AI
+      broadsheet          Off-white, accent sidebar, huge numbers — business
+      obsidian            Dark charcoal, lime green, circular — analytics
+      kodachrome          Warm cream, terracotta, italic serif — editorial
+
+    \b
+    ── SANSKRIT ALIASES ──────────────────────────────────────────────────
+
+    \b
+      arambh = init     yatra = join    padav = mark    antar = diff
+      bana   = make     safar = track   suchi = ls      dekh  = portfolio
+      haal   = status   vivaran = info
+
+    \b
     Run any command with --help for full options and examples.
     """
 

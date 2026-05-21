@@ -691,6 +691,21 @@ cli.add_command(mark_cmd)
 cli.add_command(padav_cmd)
 
 
+# ── themes ────────────────────────────────────────────────────────────────────
+
+@click.command("themes")
+def themes_cmd():
+    """Open a visual showcase of all available slide themes in your browser."""
+    import tempfile, webbrowser
+    from .theme_preview import generate_showcase
+    out = Path(tempfile.mkdtemp()) / "sarathi_themes.html"
+    generate_showcase(out)
+    webbrowser.open(out.as_uri())
+    console.print(f"[green][sarathi][/green] Theme showcase → [dim]{out}[/dim]")
+
+cli.add_command(themes_cmd)
+
+
 # ── log / itihas ──────────────────────────────────────────────────────────────
 
 def _log_impl(folder: str):

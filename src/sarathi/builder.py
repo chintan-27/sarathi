@@ -515,77 +515,7 @@ _SHARED_CLASSES = """
 # Theme skeletons — {accent}, {font_heading}, {font_body} filled by Designer Agent
 _THEME_SKELETONS: dict[str, str] = {
 
-    # ── 1. TERMINAL BRUTALIST ─────────────────────────────────────────────────
-    # JetBrains Mono everywhere, terminal-green accent, scanlines, build-log chrome
-    "terminal-brutalist": """
-        :root {{
-            --accent: {accent};
-            --fg: #e6e6e0; --fg2: #6e7268; --bg: #0a0b0a;
-            --surface: #131413; --border: #1f221e; --dim: #4a4d48;
-        }}
-        .reveal-viewport {{ background: var(--bg); }}
-        .reveal {{ font-family: 'JetBrains Mono', monospace; color: var(--fg); }}
-        .reveal .slides section {{
-            text-align: left; padding: 3.5rem 4.5rem 3rem;
-            display: flex; flex-direction: column; justify-content: flex-start;
-            background-image: repeating-linear-gradient(
-                0deg, rgba(255,255,255,0.016) 0, rgba(255,255,255,0.016) 1px,
-                transparent 1px, transparent 4px);
-        }}
-        .reveal h1 {{
-            font-family: 'JetBrains Mono', monospace; font-weight: 800;
-            font-size: clamp(2.8rem,7vw,5rem); line-height: .9;
-            letter-spacing: -.04em; color: var(--fg); margin: 0 0 .5em;
-        }}
-        .reveal h1::before {{ content: "$ "; color: {accent}; }}
-        .reveal h2 {{
-            font-family: 'JetBrains Mono', monospace; font-weight: 700;
-            font-size: clamp(1.3rem,3vw,1.9rem); line-height: 1.1;
-            letter-spacing: -.02em; color: var(--fg); margin: 0 0 .8em;
-        }}
-        .reveal h2::before {{ content: "## "; color: {accent}; }}
-        .reveal ul, .reveal ol {{ list-style: none; padding: 0; margin: 0; width: 100%; counter-reset: li; }}
-        .reveal li {{
-            counter-increment: li; display: grid;
-            grid-template-columns: 3.2rem 1fr; gap: 1rem;
-            padding: .5em 0; border-top: 1px dashed var(--border);
-            font-size: .86em; line-height: 1.55; color: var(--fg); align-items: baseline;
-        }}
-        .reveal li:last-child {{ border-bottom: 1px dashed var(--border); }}
-        .reveal li::before {{ content: "[" counter(li, decimal-leading-zero) "]"; color: {accent}; font-size: .8em; }}
-        .reveal pre {{ width: 100%; margin: .5em 0; border: 1px solid var(--border); border-radius: 3px; }}
-        .reveal pre code {{ font-size: .7em; background: var(--surface); padding: 1em; line-height: 1.6; }}
-        .reveal .progress {{ background: {accent}; height: 2px; }}
-        .reveal .controls {{ color: {accent}; }}
-        .reveal .slide-number {{ color: var(--dim); font-size: .5em; }}
-        .subtitle {{ color: var(--fg2); font-size: .78em; margin-top: .35em; }}
-        .hero-metric {{
-            font-family: 'JetBrains Mono', monospace; font-weight: 800;
-            font-size: clamp(4.5rem,16vw,9rem); line-height: .88; color: {accent};
-            letter-spacing: -.05em; display: block;
-            text-shadow: 0 0 60px rgba(0,255,156,0.22);
-        }}
-        .metric-label {{ font-size: .6em; letter-spacing: .18em; text-transform: uppercase; color: var(--dim); margin-bottom: .3em; }}
-        .metric-desc {{ font-size: .74em; color: var(--fg2); margin-top: .4em; }}
-        .grid-card {{ background: var(--surface); border: 1px solid var(--border); padding: .9rem; }}
-        .grid-card h4 {{ font-size: .74rem; font-weight: 700; color: {accent}; margin: 0 0 .3em; letter-spacing: .04em; }}
-        .grid-card p {{ font-size: .71rem; color: var(--fg2); margin: 0; line-height: 1.5; }}
-        .t-num {{ font-family: 'JetBrains Mono', monospace; font-size: 1.9rem; color: {accent}; font-weight: 800; display: block; margin-bottom: .3em; }}
-        .section-divider {{ display: flex; flex-direction: column; justify-content: center; flex: 1; }}
-        .section-divider .sec-num {{
-            font-size: clamp(6rem,22vw,14rem); font-weight: 800; color: {accent};
-            line-height: .85; letter-spacing: -.06em;
-            text-shadow: 0 0 80px rgba(0,255,156,0.2);
-        }}
-        .section-divider .sec-label {{ color: var(--dim); font-size: .6em; letter-spacing: .22em; text-transform: uppercase; margin: .5rem 0 .2rem; }}
-        .section-divider .sec-title {{ font-size: clamp(1.6rem,4vw,3rem); font-weight: 700; letter-spacing: -.02em; color: var(--fg); margin: 0; }}
-        .section-divider .sec-title::before {{ content: "## "; color: {accent}; }}
-        .statement-slide {{ display: flex; flex-direction: column; justify-content: center; flex: 1; }}
-        .statement-slide .stmt {{ font-size: clamp(2rem,5.5vw,4rem); font-weight: 800; line-height: 1.0; letter-spacing: -.03em; color: var(--fg); }}
-        .statement-slide .stmt em {{ color: {accent}; font-style: normal; }}
-    """,
-
-    # ── 2. EDITORIAL PRESS ────────────────────────────────────────────────────
+    # ── 1. EDITORIAL PRESS ────────────────────────────────────────────────────
     # Cream stock, DM Serif Display, scarlet accent, masthead chrome, magazine spreads
     "editorial-press": """
         :root {{
@@ -1531,11 +1461,12 @@ _THEME_SKELETONS: dict[str, str] = {
 
 # Theme aliases — map legacy and shorthand names to canonical ones
 _THEME_ALIASES = {
-    "dark-editorial":  "terminal-brutalist",
-    "dark-gradient":   "terminal-brutalist",
-    "dracula":         "terminal-brutalist",
-    "minimal-mono":    "terminal-brutalist",
-    "minimal":         "terminal-brutalist",
+    "dark-editorial":  "obsidian",
+    "dark-gradient":   "obsidian",
+    "dracula":         "obsidian",
+    "minimal-mono":    "obsidian",
+    "minimal":         "obsidian",
+    "terminal-brutalist": "obsidian",
     "light-clean":     "editorial-press",
     "light":           "editorial-press",
     "bold-gradient":   "gradient-dreamscape",
@@ -2660,7 +2591,7 @@ def _designer_agent(
     # Fallback: domain-based defaults
     defaults = {
         "ml":       {"theme": "gradient-dreamscape", "accent_color": "#d946ef", "font_heading": "Instrument Serif", "font_body": "Space Grotesk"},
-        "software": {"theme": "terminal-brutalist",  "accent_color": "#00ff9c", "font_heading": "JetBrains Mono",   "font_body": "JetBrains Mono"},
+        "software": {"theme": "neon-noir",           "accent_color": "#1d4ed8", "font_heading": "Space Grotesk",    "font_body": "Space Grotesk"},
         "data":     {"theme": "blueprint",           "accent_color": "#ffb84d", "font_heading": "Barlow Condensed", "font_body": "IBM Plex Mono"},
         "diff":     {"theme": "editorial-press",     "accent_color": "#b8331f", "font_heading": "DM Serif Display", "font_body": "IBM Plex Sans"},
     }

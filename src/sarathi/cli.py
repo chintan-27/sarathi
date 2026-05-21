@@ -471,7 +471,7 @@ def _track_impl(folder: str, once: bool, model: str | None, edit_outline: bool,
     coder_model    = project_cfg.get("coder_model")
     vision_model   = project_cfg.get("vision_model")
     fast_model     = project_cfg.get("fast_model")
-    theme          = project_cfg.get("theme", "dark-gradient")
+    theme          = project_cfg.get("theme", "")
     cloud_api_url     = project_cfg.get("cloud_api_url", "")
     cloud_api_key     = project_cfg.get("cloud_api_key", "")
     image_gen_model   = project_cfg.get("image_gen_model", "")
@@ -1267,7 +1267,7 @@ def _diff_impl(folder: str, from_label: str, to_label: str, model: str | None):
         model=effective_model,
         output_html=html_out,
         project_dir=project_dir,
-        theme=project_cfg.get("theme", "dark-gradient"),
+        theme=project_cfg.get("theme", ""),
         domain_override="diff",
         cloud_api_url=project_cfg.get("cloud_api_url", ""),
         cloud_api_key=project_cfg.get("cloud_api_key", ""),

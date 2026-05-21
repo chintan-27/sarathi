@@ -1681,7 +1681,7 @@ def generate(
     model: str,
     output_html: Path,
     project_dir: Path,
-    theme: str = "dark-gradient",
+    theme: str = "",
     outline_path: Path | None = None,
     domain_override: str | None = None,
     git_ctx_text: str | None = None,
@@ -1813,9 +1813,15 @@ def generate(
     console.print()
 
     # Stage 0.5 — Designer Agent (theme + accent + fonts)
+    # If the user explicitly set a theme via 'sarathi theme --set X', honour it.
+    # The designer agent then only picks accent colour and fonts, not the theme name.
     console.print("[dim][sarathi] Stage 0.5 — Designer Agent[/dim]")
+    _legacy = {"dark-gradient", "dark-editorial", "dracula", "light", "light-clean",
+               "bold-gradient", "minimal", "minimal-mono"}
+    _user_theme = theme if (theme and theme not in _legacy) else None
     theme_config = _designer_agent(
-        project_name, domain, description, all_files, _planner, console, verbose
+        project_name, domain, description, all_files, _planner, console, verbose,
+        forced_theme=_user_theme,
     )
     console.print()
 
@@ -2617,42 +2623,72 @@ def _designer_agent(
     model: str,
     console,
     verbose: bool = False,
+    forced_theme: "str | None" = None,
 ) -> dict:
-    """Choose theme, accent colour, and fonts for this deck. Returns theme_config dict."""
+    """Choose theme, accent colour, and fonts for this deck. Returns theme_config dict.
+
+    If forced_theme is set (user ran 'sarathi theme --set X'), the LLM only picks
+    accent colour and fonts — the theme name is locked in.
+    """
     file_types = list({f.type for f in files})
-    user_msg = (
-        f"Project: {project_name}\n"
-        f"Domain: {domain}\n"
-        f"Description: {description[:300]}\n"
-        f"Files present: {', '.join(file_types)}\n\n"
-        "Choose the best visual theme for this project's slide deck."
-    )
+
+    if forced_theme:
+        # User explicitly chose a theme — only ask the LLM for accent + fonts
+        system = _DESIGNER_SYSTEM + (
+            f"\n\nCRITICAL: The user has locked the theme to \"{forced_theme}\". "
+            f"You MUST output \"theme\": \"{forced_theme}\" exactly. "
+            f"Only choose accent_color, font_heading, and font_body."
+        )
+        user_msg = (
+            f"Project: {project_name}\n"
+            f"Domain: {domain}\n"
+            f"Description: {description[:300]}\n"
+            f"Files present: {', '.join(file_types)}\n"
+            f"Theme is locked to: {forced_theme}\n\n"
+            f"Choose accent_color and fonts that work well with the {forced_theme} theme."
+        )
+    else:
+        system = _DESIGNER_SYSTEM
+        user_msg = (
+            f"Project: {project_name}\n"
+            f"Domain: {domain}\n"
+            f"Description: {description[:300]}\n"
+            f"Files present: {', '.join(file_types)}\n\n"
+            "Choose the best visual theme for this project's slide deck."
+        )
+
     try:
-        raw = _chat(model, _DESIGNER_SYSTEM, user_msg, verbose=verbose)
+        raw = _chat(model, system, user_msg, verbose=verbose)
         tc  = _extract_json(raw)
-        # Validate required keys
+        if forced_theme:
+            tc["theme"] = forced_theme  # hard-enforce regardless of LLM output
         if tc.get("theme") and tc.get("accent_color"):
+            locked = " [dim](theme locked by user)[/dim]" if forced_theme else ""
             console.print(
                 f"  [green]✓ Designer Agent:[/green] "
                 f"{tc['theme']} / {tc.get('accent_color_name', tc['accent_color'])} / "
                 f"{tc.get('font_heading','?')} + {tc.get('font_body','?')}"
                 + (f" — {tc['reasoning']}" if tc.get('reasoning') else "")
+                + locked
             )
             return tc
     except Exception as exc:
         if verbose:
             console.print(f"  [dim]Designer Agent fallback ({exc})[/dim]")
-    # Fallback: domain-based defaults
+
+    # Fallback: domain-based defaults (or forced theme with domain-matched accent)
     defaults = {
         "ml":       {"theme": "gradient-dreamscape", "accent_color": "#d946ef", "font_heading": "Instrument Serif", "font_body": "Space Grotesk"},
         "software": {"theme": "neon-noir",           "accent_color": "#1d4ed8", "font_heading": "Space Grotesk",    "font_body": "Space Grotesk"},
         "data":     {"theme": "blueprint",           "accent_color": "#ffb84d", "font_heading": "Barlow Condensed", "font_body": "IBM Plex Mono"},
         "diff":     {"theme": "editorial-press",     "accent_color": "#b8331f", "font_heading": "DM Serif Display", "font_body": "IBM Plex Sans"},
     }
-    tc = defaults.get(domain, defaults["ml"])
+    tc = dict(defaults.get(domain, defaults["ml"]))
+    if forced_theme:
+        tc["theme"] = forced_theme
     console.print(
-        f"  [dim]Designer Agent:[/dim] fallback → "
-        f"{tc['theme']} / {tc['accent_color']}"
+        f"  [dim]Designer Agent:[/dim] fallback → {tc['theme']} / {tc['accent_color']}"
+        + (" (theme locked)" if forced_theme else "")
     )
     return tc
 

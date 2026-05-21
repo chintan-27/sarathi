@@ -2480,27 +2480,29 @@ _DESIGNER_SYSTEM = """\
 You are a presentation art director. Given a project description and domain, choose the best
 visual theme for a slide deck. Output ONLY a valid JSON object — no prose, no markdown fences.
 
+CRITICAL RULE: Do NOT default to dark/terminal themes just because it's a software project.
+The whole point is visual variety. Pick the theme that makes the CONTENT shine, not the one
+that matches the stereotypical vibe of the domain.
+
 Theme options:
-  terminal-brutalist  — near-black bg, JetBrains Mono everywhere, terminal-green accent,
-                        scanline texture, build-log chrome. Ideal: dev tools, infra, CLI, systems.
-  editorial-press     — cream bg, DM Serif Display, scarlet accent, masthead header,
-                        magazine spread layout. Ideal: engineering reviews, quarterly reports, research.
-  gradient-dreamscape — deep purple bg with gradient mesh, Instrument Serif italic,
-                        glass cards, gradient text fills. Ideal: keynotes, AI/ML, startup demos.
-  blueprint           — navy bg with cyan engineering grid, Barlow Condensed 900,
-                        amber dimension lines, corner marks. Ideal: architecture, data pipelines, infra.
-  swiss-brutalism     — warm white bg, Archivo Black, hard black rules, single electric accent circle.
-                        Ideal: product pitches, company reviews, high-contrast bold statements.
-  harvest             — dark forest green bg, orange accent, bold Barlow Condensed, photography-ready.
-                        Ideal: product launches, sustainability, bold growth narrative.
-  neon-noir           — near-black bg, electric blue/cyan glow, glowing borders, futuristic SaaS.
-                        Ideal: AI products, cloud infra, developer platforms, investor demos.
-  broadsheet          — off-white bg, Archivo Black, bold accent sidebar strip, huge numbers.
-                        Ideal: business reviews, market analysis, investor updates, bold data stories.
-  obsidian            — dark charcoal bg, lime green accent, circular motifs, dashboard feel.
-                        Ideal: analytics, OKR reviews, product metrics, activation dashboards.
-  kodachrome          — warm cream bg, terracotta accent, italic DM Serif, film-grain texture.
-                        Ideal: case studies, team presentations, creative projects, storytelling.
+  editorial-press     — CREAM background, DM Serif Display, scarlet accent, masthead chrome.
+                        Bold serif numbers, magazine spread layout. Visually striking on light bg.
+  gradient-dreamscape — DARK PURPLE gradient mesh, Instrument Serif italic, glass cards.
+                        Gradient text fills. Cinematic. For when you want drama.
+  blueprint           — DARK NAVY with cyan grid lines, Barlow Condensed 900, amber lines.
+                        Engineering-drawing aesthetic. Corner marks. Very distinctive.
+  swiss-brutalism     — WARM WHITE, Archivo Black oversized, hard black rules, single red dot.
+                        Loud, poster energy. Makes every slide feel like a statement.
+  harvest             — DARK FOREST GREEN, warm orange, bold Barlow Condensed.
+                        Warm, bold, feels physical. Good for growth/product narratives.
+  neon-noir           — NEAR-BLACK with electric blue glow. Futuristic, glowing borders.
+                        Only pick this if the project is genuinely futuristic/AI-native.
+  broadsheet          — OFF-WHITE, Archivo Black, colored LEFT SIDEBAR STRIP per slide.
+                        Bold orange/red accent, Bloomberg energy. Makes numbers huge and dramatic.
+  obsidian            — DARK CHARCOAL, lime green, circular motifs, dashboard feel.
+                        Only if the project is literally an analytics dashboard.
+  kodachrome          — WARM CREAM, terracotta, italic DM Serif, film-grain texture.
+                        Editorial, warm, human. For team/case study/storytelling presentations.
 
 Accent color options (pick ONE that fits the project energy):
   #00ff9c  terminal green — hacker, systems, infrastructure
@@ -2538,13 +2540,20 @@ Font body options:
 
 Output schema:
 {
-  "theme": "terminal-brutalist | editorial-press | gradient-dreamscape | blueprint | swiss-brutalism | harvest | neon-noir | broadsheet | obsidian | kodachrome",
+  "theme": "editorial-press | gradient-dreamscape | blueprint | swiss-brutalism | harvest | neon-noir | broadsheet | obsidian | kodachrome",
   "accent_color": "#XXXXXX",
   "accent_color_name": "name",
   "font_heading": "one of the heading options above",
   "font_body": "one of the body options above",
   "reasoning": "one sentence explaining the choice"
 }
+
+FINAL CHECK before outputting:
+- If you picked neon-noir, obsidian, or gradient-dreamscape: ask yourself — would editorial-press,
+  swiss-brutalism, or broadsheet make this content MORE readable and MORE visually striking?
+  Dark themes are the lazy default. Only pick them if the project is genuinely dashboard/AI-native.
+- If you picked editorial-press or swiss-brutalism: good. These are high-contrast and legible.
+- blueprint and harvest are also excellent choices that look dramatically different from defaults.
 """
 
 
@@ -2676,12 +2685,12 @@ def _designer_agent(
         if verbose:
             console.print(f"  [dim]Designer Agent fallback ({exc})[/dim]")
 
-    # Fallback: domain-based defaults (or forced theme with domain-matched accent)
+    # Fallback: domain-based defaults — deliberately diverse, not all dark
     defaults = {
-        "ml":       {"theme": "gradient-dreamscape", "accent_color": "#d946ef", "font_heading": "Instrument Serif", "font_body": "Space Grotesk"},
-        "software": {"theme": "neon-noir",           "accent_color": "#1d4ed8", "font_heading": "Space Grotesk",    "font_body": "Space Grotesk"},
-        "data":     {"theme": "blueprint",           "accent_color": "#ffb84d", "font_heading": "Barlow Condensed", "font_body": "IBM Plex Mono"},
-        "diff":     {"theme": "editorial-press",     "accent_color": "#b8331f", "font_heading": "DM Serif Display", "font_body": "IBM Plex Sans"},
+        "ml":       {"theme": "gradient-dreamscape", "accent_color": "#d946ef", "font_heading": "Instrument Serif",  "font_body": "Space Grotesk"},
+        "software": {"theme": "broadsheet",          "accent_color": "#f97316", "font_heading": "Archivo Black",     "font_body": "IBM Plex Sans"},
+        "data":     {"theme": "blueprint",           "accent_color": "#ffb84d", "font_heading": "Barlow Condensed",  "font_body": "IBM Plex Mono"},
+        "diff":     {"theme": "editorial-press",     "accent_color": "#b8331f", "font_heading": "DM Serif Display",  "font_body": "IBM Plex Sans"},
     }
     tc = dict(defaults.get(domain, defaults["ml"]))
     if forced_theme:

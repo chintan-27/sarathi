@@ -46,9 +46,11 @@ _SWATCHES = {
 
 def _adapt_css(raw: str, cls: str) -> str:
     css = raw
-    # Scope :root CSS variables to the theme container so themes don't bleed into each other
+
+    # ── 1. Scope :root vars to the theme container ───────────────────────────
     css = re.sub(r':root\s*\{', f'.{cls}-vp, .{cls}-slide {{', css)
-    # Remap Reveal.js selectors (longest/most-specific first)
+
+    # ── 2. Remap Reveal.js selectors (longest/most-specific first) ────────────
     subs = [
         (r"\.reveal-viewport::before",             f".{cls}-vp::before"),
         (r"\.reveal-viewport::after",              f".{cls}-vp::after"),
@@ -71,6 +73,31 @@ def _adapt_css(raw: str, cls: str) -> str:
     ]
     for pattern, repl in subs:
         css = re.sub(pattern, repl, css)
+
+    # ── 3. Scope all remaining utility class selectors ────────────────────────
+    # Any selector line starting with .word that isn't already scoped to this theme
+    # gets prefixed with .{cls}-slide so themes don't bleed into each other.
+    scoped_prefix = f'.{cls}-'
+    result_lines = []
+    for line in css.splitlines():
+        stripped = line.lstrip()
+        # Is this a CSS selector line (contains { and starts with a class)?
+        if '{' in stripped and re.match(r'\.[a-z]', stripped):
+            if not stripped.startswith(scoped_prefix):
+                indent = line[: len(line) - len(stripped)]
+                # Scope each comma-separated selector that isn't already scoped
+                selectors, _, rest = stripped.partition('{')
+                new_sels = []
+                for sel in selectors.split(','):
+                    sel = sel.strip()
+                    if sel.startswith(scoped_prefix):
+                        new_sels.append(sel)
+                    else:
+                        new_sels.append(f'.{cls}-slide {sel}')
+                line = indent + ', '.join(new_sels) + ' {' + rest
+        result_lines.append(line)
+    css = '\n'.join(result_lines)
+
     return css
 
 
@@ -330,7 +357,10 @@ def generate_showcase(output_path: Path) -> None:
 <link href="{_ALL_FONTS_URL}" rel="stylesheet">
 <style>
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-html, body {{ background: #f2efe9; color: #14120f;
+/* Set rem base to 42px — matches Reveal.js so clamp(Xrem,...) renders correctly
+   inside the 1920px slide canvas. Page chrome uses px/inline styles, unaffected. */
+html {{ font-size: 42px; }}
+body {{ background: #f2efe9; color: #14120f; font-size: 15px;
   font-family: 'IBM Plex Sans', system-ui, sans-serif; }}
 body {{ padding: 64px 52px 120px; }}
 {base_css}

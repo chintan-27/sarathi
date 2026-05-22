@@ -1908,21 +1908,42 @@ def ls_cmd():
             t.add_row(info.get("name", p.name), "—", "[dim]missing[/dim]", "—", "—", "—", str(p))
             continue
         try:
-            s = ptf._project_summary(p)
+            meta_path = p / "project.json"
+            meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+            name   = meta.get("name", p.name)
+            domain = meta.get("domain", "auto")
+            status = meta.get("status", "active")
+
+            # Last generated timestamp — read from tracker without a full scan
+            timeline = trk.get_timeline(p)
+            gen_events = [e for e in timeline if e.get("event") == "generated"]
+            last_gen = gen_events[-1]["ts"][:16].replace("T", " ") if gen_events else "never"
+
+            # Slide count — parse HTML cheaply without full scan
+            html_path = p / "output" / "presentation.html"
+            slide_count: str = "—"
+            if html_path.exists():
+                try:
+                    import re as _re
+                    txt = html_path.read_text(encoding="utf-8", errors="replace")
+                    n = len(_re.findall(r"<section", txt, _re.IGNORECASE))
+                    slide_count = str(n) if n else "—"
+                except Exception:
+                    pass
+
+            # Pending files — derived from timeline, no file scan
+            pending = len(trk.files_since_last_generated(p))
         except Exception:
             t.add_row(info.get("name", p.name), "—", "[red]error[/red]", "—", "—", "—", str(p))
             continue
-        if not s:
-            continue
-        status = s.get("status", "active")
+
         clr = {"active": "green", "planning": "blue", "paused": "yellow", "shipped": "cyan"}.get(status, "white")
-        pending = len(s.get("pending_files", []))
         t.add_row(
-            s.get("name", p.name),
-            s.get("domain", "auto"),
+            name,
+            domain,
             f"[{clr}]{status}[/{clr}]",
-            s.get("last_generated", "never"),
-            str(s.get("slide_count") or "—"),
+            last_gen,
+            slide_count,
             f"[yellow]{pending}[/yellow]" if pending else "—",
             str(p),
         )

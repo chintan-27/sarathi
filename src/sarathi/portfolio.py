@@ -210,13 +210,16 @@ def _compute_evolution_level(s: dict) -> tuple[int, str]:
     gens  = s.get("gen_count", 0)
     ms    = len(s.get("milestones", []))
     has_html = s.get("has_html", False)
-    if files < 5 or gens == 0:
+    ft_known = bool(s.get("file_types"))  # False when skipped (fast path)
+    if gens == 0 and (not ft_known or files < 5):
         return 1, "Seed"
     if ms >= 4 and gens >= 5 and has_html:
         return 4, "Presentation-ready"
     if ms >= 2 and gens >= 3:
         return 3, "Story-rich"
-    return 2, "Active"
+    if gens >= 1 or files >= 5:
+        return 2, "Active"
+    return 1, "Seed"
 
 
 def _project_color(name: str, domain: str, idx: int) -> str:
@@ -388,7 +391,12 @@ def _get_ollama_status() -> dict:
         return {"running": False, "backend": "ollama", "loaded_model": None, "ram_gb": 0}
 
 
-def _project_summary(project_dir: Path) -> dict:
+def _project_summary(project_dir: Path, *, full: bool = False) -> dict:
+    """Build a project summary dict.
+
+    full=False (default): skips sc.scan() and git subprocess calls — instant.
+    full=True: used by the detail view where file counts and git info are shown.
+    """
     from . import tracker as trk
     from . import config as cfg
 
@@ -426,14 +434,15 @@ def _project_summary(project_dir: Path) -> dict:
         except Exception:
             pass
 
-    try:
-        from . import scanner as sc
-        files = sc.scan(path)
-        ft: dict[str, int] = {}
-        for f in files:
-            ft[f.type] = ft.get(f.type, 0) + 1
-    except Exception:
-        ft = {}
+    ft: dict[str, int] = {}
+    if full:
+        try:
+            from . import scanner as sc
+            files = sc.scan(path)
+            for f in files:
+                ft[f.type] = ft.get(f.type, 0) + 1
+        except Exception:
+            ft = {}
 
     created_str = meta.get("created", "")
     project_age = ""
@@ -471,16 +480,17 @@ def _project_summary(project_dir: Path) -> dict:
             narrative = f"Watching files · last checkpoint {chk[0].get('ts','')[:16].replace('T',' ')}"
 
     git_branch = git_commits = git_last_msg = git_last_date = ""
-    try:
-        cwd = str(path)
-        git_branch  = _git(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd)
-        git_commits = _git(["git", "rev-list", "--count", "HEAD"], cwd)
-        last_log    = _git(["git", "log", "-1", "--format=%s|%ad", "--date=short"], cwd)
-        if "|" in last_log:
-            git_last_msg, git_last_date = last_log.split("|", 1)
-            git_last_msg = git_last_msg[:55]
-    except Exception:
-        pass
+    if full:
+        try:
+            cwd = str(path)
+            git_branch  = _git(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd)
+            git_commits = _git(["git", "rev-list", "--count", "HEAD"], cwd)
+            last_log    = _git(["git", "log", "-1", "--format=%s|%ad", "--date=short"], cwd)
+            if "|" in last_log:
+                git_last_msg, git_last_date = last_log.split("|", 1)
+                git_last_msg = git_last_msg[:55]
+        except Exception:
+            pass
 
     evo_level, evo_label = _compute_evolution_level({
         "file_types": ft, "gen_count": len(gen_events),
@@ -1667,11 +1677,15 @@ a { color:inherit; text-decoration:none; }
 
 def serve(port: int = 7432, extra_dirs: list[str] | None = None) -> None:
     from flask import Flask, request, redirect, Response, jsonify
-    import webbrowser, threading
+    import webbrowser, threading, time
 
     app = Flask(__name__)
 
-    def _load_all_summaries() -> list[dict]:
+    # TTL cache — avoids recomputing on every page hit
+    _cache: dict = {"data": None, "ts": 0.0, "refreshing": False}
+    _CACHE_TTL = 30  # seconds
+
+    def _compute_summaries() -> list[dict]:
         summaries = []
         seen: set[str] = set()
         paths: list[Path] = []
@@ -1689,10 +1703,36 @@ def serve(port: int = 7432, extra_dirs: list[str] | None = None) -> None:
             if sp in seen:
                 continue
             seen.add(sp)
-            s = _project_summary(p)
+            s = _project_summary(p, full=False)  # fast path: no sc.scan, no git
             if s:
                 summaries.append(s)
         return summaries
+
+    def _load_all_summaries() -> list[dict]:
+        now = time.monotonic()
+        cached = _cache["data"]
+        age = now - _cache["ts"]
+
+        if cached is not None and age < _CACHE_TTL:
+            return cached  # fresh cache hit
+
+        if cached is not None and not _cache["refreshing"]:
+            # Stale — serve old data immediately, refresh in background
+            _cache["refreshing"] = True
+            def _bg():
+                try:
+                    _cache["data"] = _compute_summaries()
+                    _cache["ts"] = time.monotonic()
+                finally:
+                    _cache["refreshing"] = False
+            threading.Thread(target=_bg, daemon=True).start()
+            return cached
+
+        # First load (or background refresh already in flight) — compute synchronously
+        data = _compute_summaries()
+        _cache["data"] = data
+        _cache["ts"] = time.monotonic()
+        return data
 
     @app.route("/")
     def index():
@@ -1955,7 +1995,7 @@ setInterval(pollStatus, 5000);
         p = Path(path)
         if not p.exists():
             return "Project not found", 404
-        s = _project_summary(p)
+        s = _project_summary(p, full=True)  # full scan OK — user explicitly clicked
         if not s:
             return "No project.json found", 404
         git = _get_git_details(p)
